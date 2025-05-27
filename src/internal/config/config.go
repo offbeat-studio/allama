@@ -25,7 +25,7 @@ func LoadConfig() (*Config, error) {
 
 	cfg := &Config{
 		Port:            getEnv("PORT", "8080"),
-		DatabasePath:    getEnv("DATABASE_PATH", "./ai_api_server.db"),
+		DatabasePath:    getEnv("DATABASE_PATH", "./allama.db"),
 		OpenAIAPIKey:    getEnv("OPENAI_API_KEY", ""),
 		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
 		OllamaEndpoint:  getEnv("OLLAMA_ENDPOINT", "http://localhost:11434"),
