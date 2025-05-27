@@ -1,15 +1,18 @@
 version: '3.8'
 
+# This docker-compose file is meant to be run from the Docker/ directory
 services:
   allama:
-    build: .
+    build:
+      context: ..
+      dockerfile: Docker/Dockerfile
     ports:
       - "8080:8080"
     volumes:
       - ./data:/app/data
     environment:
       - PORT=8080
-      - DATABASE_PATH=/app/data/ai_api_server.db
+      - DATABASE_PATH=/app/data/allama.db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - OLLAMA_ENDPOINT=${OLLAMA_ENDPOINT:-http://localhost:11434}
