@@ -69,101 +69,28 @@ func initializeDefaultData(store *storage.Storage, cfg *config.Config) {
 		log.Println("Database reset successful")
 	}
 
-	// Add a default OpenAI provider
-	// API key is loaded from .env file using godotenv.Load()
-	openAIProvider := &models.Provider{
-		Name:     "openai",
-		APIKey:   os.Getenv("OPENAI_API_KEY"),
-		Endpoint: "https://api.openai.com",
-		IsActive: true,
-	}
-	err := store.AddProvider(openAIProvider)
-	if err != nil {
-		log.Printf("Failed to add OpenAI provider: %v", err)
-	} else {
-		log.Printf("Added OpenAI provider with ID: %d", openAIProvider.ID)
-		// Fetch available models from OpenAI API
-		fetchModelsForProvider(store, openAIProvider)
-	}
+	// Get provider configurations
+	providers := provider.GetProviderConfigs()
 
-	// Add a default Anthropic provider
-	// API key is loaded from .env file using godotenv.Load()
-	anthropicProvider := &models.Provider{
-		Name:     "anthropic",
-		APIKey:   os.Getenv("ANTHROPIC_API_KEY"),
-		Endpoint: "https://api.anthropic.com",
-		IsActive: true,
-	}
-	err = store.AddProvider(anthropicProvider)
-	if err != nil {
-		log.Printf("Failed to add Anthropic provider: %v", err)
-	} else {
-		log.Printf("Added Anthropic provider with ID: %d", anthropicProvider.ID)
-		// Fetch available models from Anthropic API
-		fetchModelsForProvider(store, anthropicProvider)
-	}
-
-	// Add a default Ollama provider
-	// API key is loaded from .env file using godotenv.Load(), though not typically required for Ollama
-	ollamaProvider := &models.Provider{
-		Name:     "ollama",
-		APIKey:   os.Getenv("OLLAMA_API_KEY"),
-		Endpoint: "http://localhost:11434", // Default local Ollama endpoint
-		IsActive: true,
-	}
-	err = store.AddProvider(ollamaProvider)
-	if err != nil {
-		log.Printf("Failed to add Ollama provider: %v", err)
-	} else {
-		log.Printf("Added Ollama provider with ID: %d", ollamaProvider.ID)
-		// Fetch available models from Ollama API
-		fetchModelsForProvider(store, ollamaProvider)
-	}
-}
-
-// fetchModelsForProvider fetches available models from the provider's API and adds them to the database.
-func fetchModelsForProvider(store *storage.Storage, prov *models.Provider) {
-	log.Printf("Fetching models for provider: %s", prov.Name)
-
-	var modelsToAdd []models.Model
-	var err error
-
-	// Use provider-specific logic to fetch models
-	switch prov.Name {
-	case "openai":
-		openAIProvider := provider.NewOpenAIProvider(prov.APIKey)
-		modelsToAdd, err = openAIProvider.GetModels()
-		if err != nil {
-			log.Printf("Failed to fetch models for OpenAI: %v", err)
-			return
-		}
-	case "anthropic":
-		anthropicProvider := provider.NewAnthropicProvider(prov.APIKey)
-		modelsToAdd, err = anthropicProvider.GetModels()
-		if err != nil {
-			log.Printf("Failed to fetch models for Anthropic: %v", err)
-			return
-		}
-	case "ollama":
-		ollamaProvider := provider.NewOllamaProvider(prov.Endpoint)
-		modelsToAdd, err = ollamaProvider.GetModels()
-		if err != nil {
-			log.Printf("Failed to fetch models for Ollama: %v", err)
-			return
-		}
-	default:
-		log.Printf("Unknown provider: %s, cannot fetch models", prov.Name)
-		return
-	}
-
-	// Add fetched models to the database
-	for _, model := range modelsToAdd {
-		model.ProviderID = prov.ID
-		err = store.AddModel(&model)
-		if err != nil {
-			log.Printf("Failed to add model %s for provider %s: %v", model.Name, prov.Name, err)
+	// Iterate over provider configurations to initialize enabled providers
+	for _, p := range providers {
+		if enable := os.Getenv(p.EnableEnvVar); enable == "true" {
+			prov := &models.Provider{
+				Name:     p.Name,
+				APIKey:   os.Getenv(p.ApiKeyEnvVar),
+				Host:     p.Host,
+				IsActive: true,
+			}
+			err := store.AddProvider(prov)
+			if err != nil {
+				log.Printf("Failed to add %s provider: %v", p.Name, err)
+			} else {
+				log.Printf("Added %s provider with ID: %d", p.Name, prov.ID)
+				// Fetch available models from provider API
+				provider.FetchModelsForProvider(store, prov)
+			}
 		} else {
-			log.Printf("Added model %s with ID: %d for provider %s", model.Name, model.ID, prov.Name)
+			log.Printf("%s provider not enabled (%s is not set to 'true')", p.Name, p.EnableEnvVar)
 		}
 	}
 }

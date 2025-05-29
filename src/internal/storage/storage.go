@@ -39,7 +39,7 @@ func createTables(db *sql.DB) error {
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			name TEXT NOT NULL,
 			api_key TEXT,
-			endpoint TEXT,
+			host TEXT,
 			is_active BOOLEAN DEFAULT true
 		);
 	`)
@@ -104,8 +104,8 @@ func (s *Storage) ResetDatabase(databasePath string) error {
 // AddProvider adds a new provider to the database
 func (s *Storage) AddProvider(provider *models.Provider) error {
 	result, err := s.db.Exec(
-		"INSERT INTO providers (name, api_key, endpoint, is_active) VALUES (?, ?, ?, ?)",
-		provider.Name, provider.APIKey, provider.Endpoint, provider.IsActive,
+		"INSERT INTO providers (name, api_key, host, is_active) VALUES (?, ?, ?, ?)",
+		provider.Name, provider.APIKey, provider.Host, provider.IsActive,
 	)
 	if err != nil {
 		return err
@@ -120,9 +120,9 @@ func (s *Storage) AddProvider(provider *models.Provider) error {
 func (s *Storage) GetProviderByName(name string) (*models.Provider, error) {
 	provider := &models.Provider{}
 	err := s.db.QueryRow(
-		"SELECT id, name, api_key, endpoint, is_active FROM providers WHERE name = ?",
+		"SELECT id, name, api_key, host, is_active FROM providers WHERE name = ?",
 		name,
-	).Scan(&provider.ID, &provider.Name, &provider.APIKey, &provider.Endpoint, &provider.IsActive)
+	).Scan(&provider.ID, &provider.Name, &provider.APIKey, &provider.Host, &provider.IsActive)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}
@@ -133,17 +133,17 @@ func (s *Storage) GetProviderByName(name string) (*models.Provider, error) {
 }
 
 // GetActiveProviders retrieves all active providers
-func (s *Storage) GetActiveProviders() ([]models.Provider, error) {
-	rows, err := s.db.Query("SELECT id, name, api_key, endpoint, is_active FROM providers WHERE is_active = true")
+func (s *Storage) GetActiveProviders() ([]*models.Provider, error) {
+	rows, err := s.db.Query("SELECT id, name, api_key, host, is_active FROM providers WHERE is_active = true")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var providers []models.Provider
+	var providers []*models.Provider
 	for rows.Next() {
-		var p models.Provider
-		if err := rows.Scan(&p.ID, &p.Name, &p.APIKey, &p.Endpoint, &p.IsActive); err != nil {
+		p := &models.Provider{}
+		if err := rows.Scan(&p.ID, &p.Name, &p.APIKey, &p.Host, &p.IsActive); err != nil {
 			return nil, err
 		}
 		providers = append(providers, p)

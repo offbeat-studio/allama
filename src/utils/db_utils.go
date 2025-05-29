@@ -27,7 +27,7 @@ func RunDBUtils() {
 	openAIProvider := &models.Provider{
 		Name:     "openai",
 		APIKey:   "your-openai-api-key-here",
-		Endpoint: "https://api.openai.com",
+		Host:     "https://api.openai.com",
 		IsActive: true,
 	}
 	err = store.AddProvider(openAIProvider)

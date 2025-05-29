@@ -5,7 +5,7 @@ type Provider struct {
 	ID       int    `json:"id"`
 	Name     string `json:"name"`
 	APIKey   string `json:"api_key"`
-	Endpoint string `json:"endpoint"`
+	Host     string `json:"host"`
 	IsActive bool   `json:"is_active"`
 }
 

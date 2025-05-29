@@ -12,14 +12,14 @@ import (
 
 // OllamaProvider handles interactions with the Ollama API
 type OllamaProvider struct {
-	Endpoint string
-	client   *http.Client
+	Host   string
+	client *http.Client
 }
 
 // NewOllamaProvider creates a new instance of OllamaProvider
-func NewOllamaProvider(endpoint string) *OllamaProvider {
+func NewOllamaProvider(host string) *OllamaProvider {
 	return &OllamaProvider{
-		Endpoint: endpoint,
+		Host: host,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -28,7 +28,7 @@ func NewOllamaProvider(endpoint string) *OllamaProvider {
 
 // GetModels retrieves the list of available models from Ollama
 func (p *OllamaProvider) GetModels() ([]models.Model, error) {
-	url := fmt.Sprintf("%s/api/tags", p.Endpoint)
+	url := fmt.Sprintf("%s/api/tags", p.Host)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func (p *OllamaProvider) GetModels() ([]models.Model, error) {
 
 // Chat sends a chat request to Ollama and returns the response
 func (p *OllamaProvider) Chat(modelID string, messages []map[string]string) (string, error) {
-	url := fmt.Sprintf("%s/api/chat", p.Endpoint)
+	url := fmt.Sprintf("%s/api/chat", p.Host)
 	payload := map[string]interface{}{
 		"model":    modelID,
 		"messages": messages,

@@ -56,56 +56,22 @@ func (r *Router) listModels(c *gin.Context) {
 
 	var allModels []interface{}
 	for _, prov := range providers {
-		var providerImpl interface{}
-		switch prov.Name {
-		case "openai":
-			providerImpl = provider.NewOpenAIProvider(prov.APIKey)
-		case "anthropic":
-			providerImpl = provider.NewAnthropicProvider(prov.APIKey)
-		case "ollama":
-			providerImpl = provider.NewOllamaProvider(prov.Endpoint)
-		default:
+		providerImpl := provider.CreateProvider(prov)
+		if providerImpl == nil {
 			continue
 		}
 
 		var models []interface{}
 		// Try fetching models from provider API
-		switch p := providerImpl.(type) {
-		case *provider.OpenAIProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					models = append(models, gin.H{
-						"id":       model.ModelID,
-						"object":   "model",
-						"created":  0,
-						"owned_by": "openai",
-					})
-				}
-			}
-		case *provider.AnthropicProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					models = append(models, gin.H{
-						"id":       model.ModelID,
-						"object":   "model",
-						"created":  0,
-						"owned_by": "anthropic",
-					})
-				}
-			}
-		case *provider.OllamaProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					models = append(models, gin.H{
-						"id":       model.ModelID,
-						"object":   "model",
-						"created":  0,
-						"owned_by": "ollama",
-					})
-				}
+		m, err := providerImpl.GetModels()
+		if err == nil {
+			for _, model := range m {
+				models = append(models, gin.H{
+					"id":       model.ModelID,
+					"object":   "model",
+					"created":  0,
+					"owned_by": prov.Name,
+				})
 			}
 		}
 
@@ -159,28 +125,13 @@ func (r *Router) handleChat(c *gin.Context) {
 		return
 	}
 
-	var providerImpl interface{}
-	switch providerName {
-	case "openai":
-		providerImpl = provider.NewOpenAIProvider(prov.APIKey)
-	case "anthropic":
-		providerImpl = provider.NewAnthropicProvider(prov.APIKey)
-	case "ollama":
-		providerImpl = provider.NewOllamaProvider(prov.Endpoint)
-	default:
+	providerImpl := provider.CreateProvider(prov)
+	if providerImpl == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported provider"})
 		return
 	}
 
-	var responseContent string
-	switch p := providerImpl.(type) {
-	case *provider.OpenAIProvider:
-		responseContent, err = p.Chat(requestBody.Model, requestBody.Messages)
-	case *provider.AnthropicProvider:
-		responseContent, err = p.Chat(requestBody.Model, requestBody.Messages)
-	case *provider.OllamaProvider:
-		responseContent, err = p.Chat(requestBody.Model, requestBody.Messages)
-	}
+	responseContent, err := providerImpl.Chat(requestBody.Model, requestBody.Messages)
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -249,56 +200,22 @@ func (r *Router) listTags(c *gin.Context) {
 
 	var allModels []interface{}
 	for _, prov := range providers {
-		var providerImpl interface{}
-		switch prov.Name {
-		case "openai":
-			providerImpl = provider.NewOpenAIProvider(prov.APIKey)
-		case "anthropic":
-			providerImpl = provider.NewAnthropicProvider(prov.APIKey)
-		case "ollama":
-			providerImpl = provider.NewOllamaProvider(prov.Endpoint)
-		default:
+		providerImpl := provider.CreateProvider(prov)
+		if providerImpl == nil {
 			continue
 		}
 
 		var models []interface{}
 		// Try fetching models from provider API
-		switch p := providerImpl.(type) {
-		case *provider.OpenAIProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					models = append(models, gin.H{
-						"name":        model.ModelID,
-						"modified_at": "1970-01-01T00:00:00.000Z",
-						"size":        0,
-						"digest":      "",
-					})
-				}
-			}
-		case *provider.AnthropicProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					models = append(models, gin.H{
-						"name":        model.ModelID,
-						"modified_at": "1970-01-01T00:00:00.000Z",
-						"size":        0,
-						"digest":      "",
-					})
-				}
-			}
-		case *provider.OllamaProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					models = append(models, gin.H{
-						"name":        model.ModelID,
-						"modified_at": "1970-01-01T00:00:00.000Z",
-						"size":        0,
-						"digest":      "",
-					})
-				}
+		m, err := providerImpl.GetModels()
+		if err == nil {
+			for _, model := range m {
+				models = append(models, gin.H{
+					"name":        model.ModelID,
+					"modified_at": "1970-01-01T00:00:00.000Z",
+					"size":        0,
+					"digest":      "",
+				})
 			}
 		}
 
@@ -351,93 +268,33 @@ func (r *Router) showModel(c *gin.Context) {
 	var modelDetails interface{}
 	found := false
 	for _, prov := range providers {
-		var providerImpl interface{}
-		switch prov.Name {
-		case "openai":
-			providerImpl = provider.NewOpenAIProvider(prov.APIKey)
-		case "anthropic":
-			providerImpl = provider.NewAnthropicProvider(prov.APIKey)
-		case "ollama":
-			providerImpl = provider.NewOllamaProvider(prov.Endpoint)
-		default:
+		providerImpl := provider.CreateProvider(prov)
+		if providerImpl == nil {
 			continue
 		}
 
 		// Try fetching models from provider API
-		switch p := providerImpl.(type) {
-		case *provider.OpenAIProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					if model.ModelID == requestBody.Name {
-						modelDetails = gin.H{
-							"license":    "Unknown",
-							"modelfile":  "# Model information not available for OpenAI models",
-							"parameters": "N/A",
-							"template":   "{{ .Prompt }}",
-							"system":     "You are a helpful AI assistant.",
-							"details": gin.H{
-								"parent_model":       "",
-								"format":             "gguf",
-								"family":             "openai",
-								"families":           []string{"openai"},
-								"parameter_size":     "unknown",
-								"quantization_level": "N/A",
-							},
-						}
-						found = true
-						break
+		m, err := providerImpl.GetModels()
+		if err == nil {
+			for _, model := range m {
+				if model.ModelID == requestBody.Name {
+					modelDetails = gin.H{
+						"license":    "Unknown",
+						"modelfile":  fmt.Sprintf("# Model information for %s model", prov.Name),
+						"parameters": "N/A",
+						"template":   "{{ .Prompt }}",
+						"system":     "You are a helpful AI assistant.",
+						"details": gin.H{
+							"parent_model":       "",
+							"format":             "gguf",
+							"family":             prov.Name,
+							"families":           []string{prov.Name},
+							"parameter_size":     "unknown",
+							"quantization_level": "N/A",
+						},
 					}
-				}
-			}
-		case *provider.AnthropicProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					if model.ModelID == requestBody.Name {
-						modelDetails = gin.H{
-							"license":    "Unknown",
-							"modelfile":  "# Model information not available for Anthropic models",
-							"parameters": "N/A",
-							"template":   "{{ .Prompt }}",
-							"system":     "You are a helpful AI assistant.",
-							"details": gin.H{
-								"parent_model":       "",
-								"format":             "gguf",
-								"family":             "anthropic",
-								"families":           []string{"anthropic"},
-								"parameter_size":     "unknown",
-								"quantization_level": "N/A",
-							},
-						}
-						found = true
-						break
-					}
-				}
-			}
-		case *provider.OllamaProvider:
-			m, err := p.GetModels()
-			if err == nil {
-				for _, model := range m {
-					if model.ModelID == requestBody.Name {
-						modelDetails = gin.H{
-							"license":    "Unknown",
-							"modelfile":  "# Model information for Ollama model",
-							"parameters": "N/A",
-							"template":   "{{ .Prompt }}",
-							"system":     "You are a helpful AI assistant.",
-							"details": gin.H{
-								"parent_model":       "",
-								"format":             "gguf",
-								"family":             "ollama",
-								"families":           []string{"ollama"},
-								"parameter_size":     "unknown",
-								"quantization_level": "N/A",
-							},
-						}
-						found = true
-						break
-					}
+					found = true
+					break
 				}
 			}
 		}

@@ -13,13 +13,15 @@ import (
 // OpenAIProvider handles interactions with the OpenAI API
 type OpenAIProvider struct {
 	APIKey string
+	Host   string
 	client *http.Client
 }
 
 // NewOpenAIProvider creates a new instance of OpenAIProvider
-func NewOpenAIProvider(apiKey string) *OpenAIProvider {
+func NewOpenAIProvider(apiKey string, host string) *OpenAIProvider {
 	return &OpenAIProvider{
 		APIKey: apiKey,
+		Host:   host,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -28,7 +30,7 @@ func NewOpenAIProvider(apiKey string) *OpenAIProvider {
 
 // GetModels retrieves the list of available models from OpenAI
 func (p *OpenAIProvider) GetModels() ([]models.Model, error) {
-	url := "https://api.openai.com/v1/models"
+	url := fmt.Sprintf("%s/v1/models", p.Host)
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -70,7 +72,7 @@ func (p *OpenAIProvider) GetModels() ([]models.Model, error) {
 
 // Chat sends a chat request to OpenAI and returns the response
 func (p *OpenAIProvider) Chat(modelID string, messages []map[string]string) (string, error) {
-	url := "https://api.openai.com/v1/chat/completions"
+	url := fmt.Sprintf("%s/v1/chat/completions", p.Host)
 	payload := map[string]interface{}{
 		"model":    modelID,
 		"messages": messages,

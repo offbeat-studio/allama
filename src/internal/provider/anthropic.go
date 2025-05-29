@@ -13,13 +13,15 @@ import (
 // AnthropicProvider handles interactions with the Anthropic API
 type AnthropicProvider struct {
 	APIKey string
+	Host   string
 	client *http.Client
 }
 
 // NewAnthropicProvider creates a new instance of AnthropicProvider
-func NewAnthropicProvider(apiKey string) *AnthropicProvider {
+func NewAnthropicProvider(apiKey string, host string) *AnthropicProvider {
 	return &AnthropicProvider{
 		APIKey: apiKey,
+		Host:   host,
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
@@ -28,7 +30,7 @@ func NewAnthropicProvider(apiKey string) *AnthropicProvider {
 
 // GetModels retrieves the list of available models from Anthropic
 func (p *AnthropicProvider) GetModels() ([]models.Model, error) {
-	url := "https://api.anthropic.com/v1/models"
+	url := fmt.Sprintf("%s/v1/models", p.Host)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -71,7 +73,7 @@ func (p *AnthropicProvider) GetModels() ([]models.Model, error) {
 
 // Chat sends a chat request to Anthropic and returns the response
 func (p *AnthropicProvider) Chat(modelID string, messages []map[string]string) (string, error) {
-	url := "https://api.anthropic.com/v1/messages"
+	url := fmt.Sprintf("%s/v1/messages", p.Host)
 
 	// Convert messages to Anthropic format
 	var anthropicMessages []map[string]interface{}

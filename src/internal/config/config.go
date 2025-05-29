@@ -9,11 +9,8 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Port            string
-	DatabasePath    string
-	OpenAIAPIKey    string
-	AnthropicAPIKey string
-	OllamaEndpoint  string
+	Port         string
+	DatabasePath string
 }
 
 // LoadConfig loads configuration from environment variables or .env file
