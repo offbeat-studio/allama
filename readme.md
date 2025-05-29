@@ -1,6 +1,8 @@
 # Allama
 
-Allama is a versatile API router and provider management system designed to aggregate and manage multiple AI model providers under a unified interface. It supports integration with various providers like OpenAI, Anthropic, and Ollama, allowing seamless access to different AI models through a single API endpoint. This project aims to simplify the interaction with multiple AI services by providing a consistent interface and handling the complexity of provider-specific configurations and communications.
+![Allama Logo](./logo.png)
+
+Allama is your ultimate gateway to the world of AI, offering a powerful and intuitive API router that seamlessly integrates multiple AI model providers into one unified platform. Allama simplifies your workflow by providing a single, elegant API endpoint. Say goodbye to the hassle of managing different provider configurations—Allama handles the complexity, letting you focus on creating groundbreaking AI solutions with ease.
 
 ## Features
 
