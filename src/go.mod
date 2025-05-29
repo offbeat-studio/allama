@@ -1,4 +1,4 @@
-module github.com/nickhuang/allama
+module github.com/offbeat-studio/allama
 
 go 1.24.3
 

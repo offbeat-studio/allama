@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nickhuang/allama/internal/models"
+	"github.com/offbeat-studio/allama/internal/models"
 )
 
 // AnthropicProvider handles interactions with the Anthropic API

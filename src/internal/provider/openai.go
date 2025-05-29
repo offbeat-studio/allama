@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/nickhuang/allama/internal/models"
+	"github.com/offbeat-studio/allama/internal/models"
 )
 
 // OpenAIProvider handles interactions with the OpenAI API

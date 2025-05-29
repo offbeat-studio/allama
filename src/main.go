@@ -7,11 +7,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
-	"github.com/nickhuang/allama/internal/config"
-	"github.com/nickhuang/allama/internal/models"
-	"github.com/nickhuang/allama/internal/provider"
-	"github.com/nickhuang/allama/internal/router"
-	"github.com/nickhuang/allama/internal/storage"
+	"github.com/offbeat-studio/allama/internal/config"
+	"github.com/offbeat-studio/allama/internal/models"
+	"github.com/offbeat-studio/allama/internal/provider"
+	"github.com/offbeat-studio/allama/internal/router"
+	"github.com/offbeat-studio/allama/internal/storage"
 )
 
 func main() {

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/nickhuang/allama/internal/config"
-	"github.com/nickhuang/allama/internal/models"
-	"github.com/nickhuang/allama/internal/storage"
+	"github.com/offbeat-studio/allama/internal/config"
+	"github.com/offbeat-studio/allama/internal/models"
+	"github.com/offbeat-studio/allama/internal/storage"
 )
 
 func RunDBUtils() {

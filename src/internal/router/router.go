@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/nickhuang/allama/internal/config"
-	"github.com/nickhuang/allama/internal/provider"
-	"github.com/nickhuang/allama/internal/storage"
+	"github.com/offbeat-studio/allama/internal/config"
+	"github.com/offbeat-studio/allama/internal/provider"
+	"github.com/offbeat-studio/allama/internal/storage"
 )
 
 // Router handles API routing and provider redirection logic

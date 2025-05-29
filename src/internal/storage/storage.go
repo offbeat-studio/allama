@@ -6,8 +6,8 @@ import (
 
 	_ "github.com/mattn/go-sqlite3"
 
-	"github.com/nickhuang/allama/internal/config"
-	"github.com/nickhuang/allama/internal/models"
+	"github.com/offbeat-studio/allama/internal/config"
+	"github.com/offbeat-studio/allama/internal/models"
 )
 
 // Storage represents the database connection and operations
