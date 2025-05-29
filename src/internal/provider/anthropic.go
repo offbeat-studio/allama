@@ -28,25 +28,45 @@ func NewAnthropicProvider(apiKey string) *AnthropicProvider {
 
 // GetModels retrieves the list of available models from Anthropic
 func (p *AnthropicProvider) GetModels() ([]models.Model, error) {
-	// Anthropic does not have a public endpoint to list models,
-	// so we return a hardcoded list of known models
-	return []models.Model{
-		{
-			Name:     "Claude 3 Opus",
-			ModelID:  "claude-3-opus-20240229",
+	url := "https://api.anthropic.com/v1/models"
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Set("x-api-key", p.APIKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var modelsResp struct {
+		Data []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&modelsResp); err != nil {
+		return nil, err
+	}
+
+	var modelList []models.Model
+	for _, m := range modelsResp.Data {
+		modelList = append(modelList, models.Model{
+			Name:     m.Name,
+			ModelID:  m.ID,
 			IsActive: true,
-		},
-		{
-			Name:     "Claude 3 Sonnet",
-			ModelID:  "claude-3-sonnet-20240229",
-			IsActive: true,
-		},
-		{
-			Name:     "Claude 3 Haiku",
-			ModelID:  "claude-3-haiku-20240307",
-			IsActive: true,
-		},
-	}, nil
+		})
+	}
+
+	return modelList, nil
 }
 
 // Chat sends a chat request to Anthropic and returns the response
@@ -62,8 +82,16 @@ func (p *AnthropicProvider) Chat(modelID string, messages []map[string]string) (
 		if role == "system" {
 			systemMessage = content
 		} else {
+			// Ensure role is compatible with Anthropic API (e.g., 'user' or 'assistant')
+			anthropicRole := role
+			if role == "user" || role == "assistant" {
+				anthropicRole = role
+			} else {
+				// Default to 'user' for unknown roles to maintain compatibility
+				anthropicRole = "user"
+			}
 			anthropicMessages = append(anthropicMessages, map[string]interface{}{
-				"role":    role,
+				"role":    anthropicRole,
 				"content": content,
 			})
 		}

@@ -18,17 +18,14 @@ type Config struct {
 
 // LoadConfig loads configuration from environment variables or .env file
 func LoadConfig() (*Config, error) {
-	// Load .env file if it exists
-	if err := godotenv.Load(); err != nil {
+	// Load .env file and override existing environment variables
+	if err := godotenv.Overload(); err != nil {
 		log.Println("No .env file found, using environment variables")
 	}
 
 	cfg := &Config{
-		Port:            getEnv("PORT", "8080"),
-		DatabasePath:    getEnv("DATABASE_PATH", "./allama.db"),
-		OpenAIAPIKey:    getEnv("OPENAI_API_KEY", ""),
-		AnthropicAPIKey: getEnv("ANTHROPIC_API_KEY", ""),
-		OllamaEndpoint:  getEnv("OLLAMA_ENDPOINT", "http://localhost:11434"),
+		Port:         getEnv("PORT", "8080"),
+		DatabasePath: getEnv("DATABASE_PATH", "./allama.db"),
 	}
 
 	return cfg, nil

@@ -3,14 +3,24 @@ package main
 import (
 	"log"
 
+	"os"
+
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 	"github.com/nickhuang/allama/internal/config"
 	"github.com/nickhuang/allama/internal/models"
+	"github.com/nickhuang/allama/internal/provider"
 	"github.com/nickhuang/allama/internal/router"
 	"github.com/nickhuang/allama/internal/storage"
 )
 
 func main() {
+	// Load environment variables from .env file
+	err := godotenv.Overload()
+	if err != nil {
+		log.Printf("Warning: Could not load .env file: %v", err)
+	}
+
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {
@@ -25,7 +35,7 @@ func main() {
 	defer store.Close()
 
 	// Initialize default data
-	initializeDefaultData(store)
+	initializeDefaultData(store, cfg)
 
 	// Initialize Gin router
 	ginRouter := gin.Default()
@@ -48,49 +58,112 @@ func main() {
 	}
 }
 
-// initializeDefaultData checks for and inserts default data into the database if necessary.
-func initializeDefaultData(store *storage.Storage) {
-	// Check if there are any providers in the database
-	providers, err := store.GetActiveProviders()
+// initializeDefaultData deletes the existing database and inserts default data into the database.
+func initializeDefaultData(store *storage.Storage, cfg *config.Config) {
+	log.Println("Initializing default data...")
+
+	// Reset the database to ensure a clean state on each run
+	if err := store.ResetDatabase(cfg.DatabasePath); err != nil {
+		log.Printf("Failed to reset database: %v", err)
+	} else {
+		log.Println("Database reset successful")
+	}
+
+	// Add a default OpenAI provider
+	// API key is loaded from .env file using godotenv.Load()
+	openAIProvider := &models.Provider{
+		Name:     "openai",
+		APIKey:   os.Getenv("OPENAI_API_KEY"),
+		Endpoint: "https://api.openai.com",
+		IsActive: true,
+	}
+	err := store.AddProvider(openAIProvider)
 	if err != nil {
-		log.Printf("Failed to check for existing providers: %v", err)
+		log.Printf("Failed to add OpenAI provider: %v", err)
+	} else {
+		log.Printf("Added OpenAI provider with ID: %d", openAIProvider.ID)
+		// Fetch available models from OpenAI API
+		fetchModelsForProvider(store, openAIProvider)
+	}
+
+	// Add a default Anthropic provider
+	// API key is loaded from .env file using godotenv.Load()
+	anthropicProvider := &models.Provider{
+		Name:     "anthropic",
+		APIKey:   os.Getenv("ANTHROPIC_API_KEY"),
+		Endpoint: "https://api.anthropic.com",
+		IsActive: true,
+	}
+	err = store.AddProvider(anthropicProvider)
+	if err != nil {
+		log.Printf("Failed to add Anthropic provider: %v", err)
+	} else {
+		log.Printf("Added Anthropic provider with ID: %d", anthropicProvider.ID)
+		// Fetch available models from Anthropic API
+		fetchModelsForProvider(store, anthropicProvider)
+	}
+
+	// Add a default Ollama provider
+	// API key is loaded from .env file using godotenv.Load(), though not typically required for Ollama
+	ollamaProvider := &models.Provider{
+		Name:     "ollama",
+		APIKey:   os.Getenv("OLLAMA_API_KEY"),
+		Endpoint: "http://localhost:11434", // Default local Ollama endpoint
+		IsActive: true,
+	}
+	err = store.AddProvider(ollamaProvider)
+	if err != nil {
+		log.Printf("Failed to add Ollama provider: %v", err)
+	} else {
+		log.Printf("Added Ollama provider with ID: %d", ollamaProvider.ID)
+		// Fetch available models from Ollama API
+		fetchModelsForProvider(store, ollamaProvider)
+	}
+}
+
+// fetchModelsForProvider fetches available models from the provider's API and adds them to the database.
+func fetchModelsForProvider(store *storage.Storage, prov *models.Provider) {
+	log.Printf("Fetching models for provider: %s", prov.Name)
+
+	var modelsToAdd []models.Model
+	var err error
+
+	// Use provider-specific logic to fetch models
+	switch prov.Name {
+	case "openai":
+		openAIProvider := provider.NewOpenAIProvider(prov.APIKey)
+		modelsToAdd, err = openAIProvider.GetModels()
+		if err != nil {
+			log.Printf("Failed to fetch models for OpenAI: %v", err)
+			return
+		}
+	case "anthropic":
+		anthropicProvider := provider.NewAnthropicProvider(prov.APIKey)
+		modelsToAdd, err = anthropicProvider.GetModels()
+		if err != nil {
+			log.Printf("Failed to fetch models for Anthropic: %v", err)
+			return
+		}
+	case "ollama":
+		ollamaProvider := provider.NewOllamaProvider(prov.Endpoint)
+		modelsToAdd, err = ollamaProvider.GetModels()
+		if err != nil {
+			log.Printf("Failed to fetch models for Ollama: %v", err)
+			return
+		}
+	default:
+		log.Printf("Unknown provider: %s, cannot fetch models", prov.Name)
 		return
 	}
 
-	// If there are no providers, add default ones
-	if len(providers) == 0 {
-		log.Println("No providers found, initializing default data...")
-
-		// Add a default OpenAI provider
-		openAIProvider := &models.Provider{
-			Name:     "openai",
-			APIKey:   "", // API key should be set via environment variables or configuration
-			Endpoint: "https://api.openai.com",
-			IsActive: true,
-		}
-		err = store.AddProvider(openAIProvider)
+	// Add fetched models to the database
+	for _, model := range modelsToAdd {
+		model.ProviderID = prov.ID
+		err = store.AddModel(&model)
 		if err != nil {
-			log.Printf("Failed to add OpenAI provider: %v", err)
+			log.Printf("Failed to add model %s for provider %s: %v", model.Name, prov.Name, err)
 		} else {
-			log.Printf("Added OpenAI provider with ID: %d", openAIProvider.ID)
-
-			// Add a default model for the provider
-			gptModel := &models.Model{
-				ProviderID: openAIProvider.ID,
-				Name:       "GPT-4",
-				ModelID:    "gpt-4",
-				IsActive:   true,
-			}
-			err = store.AddModel(gptModel)
-			if err != nil {
-				log.Printf("Failed to add GPT-4 model: %v", err)
-			} else {
-				log.Printf("Added GPT-4 model with ID: %d", gptModel.ID)
-			}
+			log.Printf("Added model %s with ID: %d for provider %s", model.Name, model.ID, prov.Name)
 		}
-
-		// You can add more default providers and models here as needed
-	} else {
-		log.Println("Providers already exist, skipping default data initialization.")
 	}
 }

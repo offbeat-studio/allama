@@ -1,4 +1,4 @@
-package main
+package dbutils
 
 import (
 	"fmt"
@@ -9,7 +9,7 @@ import (
 	"github.com/nickhuang/allama/internal/storage"
 )
 
-func main() {
+func RunDBUtils() {
 	// Load configuration
 	cfg, err := config.LoadConfig()
 	if err != nil {

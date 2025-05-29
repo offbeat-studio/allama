@@ -39,7 +39,7 @@ func (r *Router) SetupRoutes() {
 	v1.POST("/chat/completions", r.handleChat)
 }
 
-// listModels retrieves and aggregates models from all active providers
+// listModels retrieves and aggregates models from all active providers and local database
 func (r *Router) listModels(c *gin.Context) {
 	providers, err := r.store.GetActiveProviders()
 	if err != nil {
@@ -62,6 +62,7 @@ func (r *Router) listModels(c *gin.Context) {
 		}
 
 		var models []interface{}
+		// Try fetching models from provider API
 		switch p := providerImpl.(type) {
 		case *provider.OpenAIProvider:
 			m, err := p.GetModels()
@@ -100,6 +101,23 @@ func (r *Router) listModels(c *gin.Context) {
 				}
 			}
 		}
+
+		// If no models fetched from API or error occurred, fall back to local database models
+		if len(models) == 0 {
+			localModels, err := r.store.GetModelsByProviderID(prov.ID)
+			if err == nil {
+				for _, model := range localModels {
+					if model.IsActive {
+						models = append(models, gin.H{
+							"id":       model.ModelID,
+							"object":   "model",
+							"created":  0,
+							"owned_by": prov.Name,
+						})
+					}
+				}
+			}
+		}
 		allModels = append(allModels, models...)
 	}
 
@@ -121,8 +139,8 @@ func (r *Router) handleChat(c *gin.Context) {
 		return
 	}
 
-	// Determine provider based on model prefix or configuration
-	providerName := determineProviderFromModel(requestBody.Model)
+	// Determine provider based on model ID using database lookup
+	providerName := r.determineProviderFromModel(requestBody.Model)
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported model"})
 		return
@@ -180,21 +198,33 @@ func (r *Router) handleChat(c *gin.Context) {
 	})
 }
 
-// determineProviderFromModel extracts provider name from model ID
-func determineProviderFromModel(modelID string) string {
+// determineProviderFromModel retrieves the provider name associated with a model ID from the database
+func (r *Router) determineProviderFromModel(modelID string) string {
 	if modelID == "" {
 		return ""
 	}
 
-	if modelID[0:6] == "claude" {
-		return "anthropic"
-	} else if modelID[0:3] == "gpt" || modelID[0:5] == "o1-mini" || modelID[0:8] == "o1-preview" {
-		return "openai"
-	} else {
-		// Check if it's an Ollama model (could have various prefixes)
-		// For simplicity, assume anything not matching above is Ollama
-		return "ollama"
+	// Use the store instance from the Router struct to query the database
+	providers, err := r.store.GetActiveProviders()
+	if err != nil {
+		return ""
 	}
+
+	// Iterate through providers to find a matching model
+	for _, prov := range providers {
+		models, err := r.store.GetModelsByProviderID(prov.ID)
+		if err != nil {
+			continue
+		}
+		for _, model := range models {
+			if model.ModelID == modelID {
+				return prov.Name
+			}
+		}
+	}
+
+	// If no match found, return empty string
+	return ""
 }
 
 // generateID creates a simple unique ID for responses

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"database/sql"
+	"os"
 
 	_ "github.com/mattn/go-sqlite3"
 
@@ -67,6 +68,37 @@ func createTables(db *sql.DB) error {
 // Close closes the database connection
 func (s *Storage) Close() error {
 	return s.db.Close()
+}
+
+// ResetDatabase deletes the existing database file and recreates it with the initial schema
+func (s *Storage) ResetDatabase(databasePath string) error {
+	// Close the current database connection
+	if err := s.Close(); err != nil {
+		return err
+	}
+
+	// Delete the database file if it exists
+	if _, err := os.Stat(databasePath); err == nil {
+		if err := os.Remove(databasePath); err != nil {
+			return err
+		}
+	}
+
+	// Reopen a new database connection
+	db, err := sql.Open("sqlite3", databasePath)
+	if err != nil {
+		return err
+	}
+
+	// Recreate the tables
+	if err := createTables(db); err != nil {
+		db.Close()
+		return err
+	}
+
+	// Update the storage instance with the new database connection
+	s.db = db
+	return nil
 }
 
 // AddProvider adds a new provider to the database
