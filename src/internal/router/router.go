@@ -29,6 +29,13 @@ func NewRouter(cfg *config.Config, store *storage.Storage, engine *gin.Engine) *
 
 // SetupRoutes defines the API endpoints and routing logic
 func (r *Router) SetupRoutes() {
+	// ollama API
+	// Tags endpoint to list available model tags from all providers as if from Ollama, directly under /api
+	r.router.GET("/api/tags", r.listTags)
+
+	// Show endpoint to get detailed information about a specific model, directly under /api
+	r.router.POST("/api/show", r.showModel)
+
 	// API version 1 group
 	v1 := r.router.Group("/api/v1")
 
@@ -230,4 +237,246 @@ func (r *Router) determineProviderFromModel(modelID string) string {
 // generateID creates a simple unique ID for responses
 func generateID() string {
 	return fmt.Sprintf("%d", time.Now().Nanosecond())
+}
+
+// listTags retrieves and aggregates model tags from all active providers, presenting them as Ollama models
+func (r *Router) listTags(c *gin.Context) {
+	providers, err := r.store.GetActiveProviders()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve providers"})
+		return
+	}
+
+	var allModels []interface{}
+	for _, prov := range providers {
+		var providerImpl interface{}
+		switch prov.Name {
+		case "openai":
+			providerImpl = provider.NewOpenAIProvider(prov.APIKey)
+		case "anthropic":
+			providerImpl = provider.NewAnthropicProvider(prov.APIKey)
+		case "ollama":
+			providerImpl = provider.NewOllamaProvider(prov.Endpoint)
+		default:
+			continue
+		}
+
+		var models []interface{}
+		// Try fetching models from provider API
+		switch p := providerImpl.(type) {
+		case *provider.OpenAIProvider:
+			m, err := p.GetModels()
+			if err == nil {
+				for _, model := range m {
+					models = append(models, gin.H{
+						"name":        model.ModelID,
+						"modified_at": "1970-01-01T00:00:00.000Z",
+						"size":        0,
+						"digest":      "",
+					})
+				}
+			}
+		case *provider.AnthropicProvider:
+			m, err := p.GetModels()
+			if err == nil {
+				for _, model := range m {
+					models = append(models, gin.H{
+						"name":        model.ModelID,
+						"modified_at": "1970-01-01T00:00:00.000Z",
+						"size":        0,
+						"digest":      "",
+					})
+				}
+			}
+		case *provider.OllamaProvider:
+			m, err := p.GetModels()
+			if err == nil {
+				for _, model := range m {
+					models = append(models, gin.H{
+						"name":        model.ModelID,
+						"modified_at": "1970-01-01T00:00:00.000Z",
+						"size":        0,
+						"digest":      "",
+					})
+				}
+			}
+		}
+
+		// If no models fetched from API or error occurred, fall back to local database models
+		if len(models) == 0 {
+			localModels, err := r.store.GetModelsByProviderID(prov.ID)
+			if err == nil {
+				for _, model := range localModels {
+					if model.IsActive {
+						models = append(models, gin.H{
+							"name":        model.ModelID,
+							"modified_at": "1970-01-01T00:00:00.000Z",
+							"size":        0,
+							"digest":      "",
+						})
+					}
+				}
+			}
+		}
+		allModels = append(allModels, models...)
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"models": allModels,
+	})
+}
+
+// showModel retrieves detailed information about a specific model, presenting it as an Ollama model
+func (r *Router) showModel(c *gin.Context) {
+	var requestBody struct {
+		Name string `json:"model"`
+	}
+
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	if requestBody.Name == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Model name is required"})
+		return
+	}
+
+	providers, err := r.store.GetActiveProviders()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve providers"})
+		return
+	}
+
+	var modelDetails interface{}
+	found := false
+	for _, prov := range providers {
+		var providerImpl interface{}
+		switch prov.Name {
+		case "openai":
+			providerImpl = provider.NewOpenAIProvider(prov.APIKey)
+		case "anthropic":
+			providerImpl = provider.NewAnthropicProvider(prov.APIKey)
+		case "ollama":
+			providerImpl = provider.NewOllamaProvider(prov.Endpoint)
+		default:
+			continue
+		}
+
+		// Try fetching models from provider API
+		switch p := providerImpl.(type) {
+		case *provider.OpenAIProvider:
+			m, err := p.GetModels()
+			if err == nil {
+				for _, model := range m {
+					if model.ModelID == requestBody.Name {
+						modelDetails = gin.H{
+							"license":    "Unknown",
+							"modelfile":  "# Model information not available for OpenAI models",
+							"parameters": "N/A",
+							"template":   "{{ .Prompt }}",
+							"system":     "You are a helpful AI assistant.",
+							"details": gin.H{
+								"parent_model":       "",
+								"format":             "gguf",
+								"family":             "openai",
+								"families":           []string{"openai"},
+								"parameter_size":     "unknown",
+								"quantization_level": "N/A",
+							},
+						}
+						found = true
+						break
+					}
+				}
+			}
+		case *provider.AnthropicProvider:
+			m, err := p.GetModels()
+			if err == nil {
+				for _, model := range m {
+					if model.ModelID == requestBody.Name {
+						modelDetails = gin.H{
+							"license":    "Unknown",
+							"modelfile":  "# Model information not available for Anthropic models",
+							"parameters": "N/A",
+							"template":   "{{ .Prompt }}",
+							"system":     "You are a helpful AI assistant.",
+							"details": gin.H{
+								"parent_model":       "",
+								"format":             "gguf",
+								"family":             "anthropic",
+								"families":           []string{"anthropic"},
+								"parameter_size":     "unknown",
+								"quantization_level": "N/A",
+							},
+						}
+						found = true
+						break
+					}
+				}
+			}
+		case *provider.OllamaProvider:
+			m, err := p.GetModels()
+			if err == nil {
+				for _, model := range m {
+					if model.ModelID == requestBody.Name {
+						modelDetails = gin.H{
+							"license":    "Unknown",
+							"modelfile":  "# Model information for Ollama model",
+							"parameters": "N/A",
+							"template":   "{{ .Prompt }}",
+							"system":     "You are a helpful AI assistant.",
+							"details": gin.H{
+								"parent_model":       "",
+								"format":             "gguf",
+								"family":             "ollama",
+								"families":           []string{"ollama"},
+								"parameter_size":     "unknown",
+								"quantization_level": "N/A",
+							},
+						}
+						found = true
+						break
+					}
+				}
+			}
+		}
+
+		if !found {
+			localModels, err := r.store.GetModelsByProviderID(prov.ID)
+			if err == nil {
+				for _, model := range localModels {
+					if model.IsActive && model.ModelID == requestBody.Name {
+						modelDetails = gin.H{
+							"license":    "Unknown",
+							"modelfile":  "# Model information from local database",
+							"parameters": "N/A",
+							"template":   "{{ .Prompt }}",
+							"system":     "You are a helpful AI assistant.",
+							"details": gin.H{
+								"parent_model":       "",
+								"format":             "gguf",
+								"family":             prov.Name,
+								"families":           []string{prov.Name},
+								"parameter_size":     "unknown",
+								"quantization_level": "N/A",
+							},
+						}
+						found = true
+						break
+					}
+				}
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	if !found {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Model not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, modelDetails)
 }
