@@ -1,15 +1,23 @@
+// src/internal/router/router.go modification for testable time
 package router
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
-	"time"
+	"strings"
+	"time" // Keep this standard import
 
 	"github.com/gin-gonic/gin"
 	"github.com/offbeat-studio/allama/internal/config"
 	"github.com/offbeat-studio/allama/internal/provider"
 	"github.com/offbeat-studio/allama/internal/storage"
 )
+
+// timeNow is a variable that can be replaced by a mock in tests.
+var timeNow = time.Now
+
 
 // Router handles API routing and provider redirection logic
 type Router struct {
@@ -29,24 +37,13 @@ func NewRouter(cfg *config.Config, store *storage.Storage, engine *gin.Engine) *
 
 // SetupRoutes defines the API endpoints and routing logic
 func (r *Router) SetupRoutes() {
-	// ollama API
-	// Tags endpoint to list available model tags from all providers as if from Ollama, directly under /api
 	r.router.GET("/api/tags", r.listTags)
-
-	// Show endpoint to get detailed information about a specific model, directly under /api
 	r.router.POST("/api/show", r.showModel)
-
-	// API version 1 group
 	v1 := r.router.Group("/api/v1")
-
-	// Models endpoint to list available models from all providers
 	v1.GET("/models", r.listModels)
-
-	// Chat endpoint to handle chat requests and redirect to appropriate provider
 	v1.POST("/chat/completions", r.handleChat)
 }
 
-// listModels retrieves and aggregates models from all active providers and local database
 func (r *Router) listModels(c *gin.Context) {
 	providers, err := r.store.GetActiveProviders()
 	if err != nil {
@@ -62,7 +59,6 @@ func (r *Router) listModels(c *gin.Context) {
 		}
 
 		var models []interface{}
-		// Try fetching models from provider API
 		m, err := providerImpl.GetModels()
 		if err == nil {
 			for _, model := range m {
@@ -75,10 +71,9 @@ func (r *Router) listModels(c *gin.Context) {
 			}
 		}
 
-		// If no models fetched from API or error occurred, fall back to local database models
 		if len(models) == 0 {
-			localModels, err := r.store.GetModelsByProviderID(prov.ID)
-			if err == nil {
+			localModels, errDb := r.store.GetModelsByProviderID(prov.ID)
+			if errDb == nil {
 				for _, model := range localModels {
 					if model.IsActive {
 						models = append(models, gin.H{
@@ -100,19 +95,74 @@ func (r *Router) listModels(c *gin.Context) {
 	})
 }
 
-// handleChat processes chat requests and redirects to the appropriate provider
 func (r *Router) handleChat(c *gin.Context) {
 	var requestBody struct {
 		Model    string              `json:"model"`
 		Messages []map[string]string `json:"messages"`
+		Stream   *bool               `json:"stream"`
 	}
 
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, c.Request.Body); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to read request body"})
+		return
+	}
+	firstPassReader := bytes.NewReader(buf.Bytes())
+	secondPassReader := bytes.NewReader(buf.Bytes())
+
+	c.Request.Body = io.NopCloser(firstPassReader)
+
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body: " + err.Error()})
 		return
 	}
 
-	// Determine provider based on model ID using database lookup
+	c.Request.Body = io.NopCloser(secondPassReader)
+
+	if strings.Contains(strings.ToLower(requestBody.Model), "ollama") {
+		ollamaProv, err := r.store.GetProviderByName("ollama")
+		if err != nil || ollamaProv == nil || ollamaProv.Host == "" {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ollama provider not configured or host not found"})
+			return
+		}
+
+		targetURL := ollamaProv.Host + "/api/chat"
+
+		proxyReq, err := http.NewRequest(c.Request.Method, targetURL, c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create proxy request: " + err.Error()})
+			return
+		}
+
+		proxyReq.Header = make(http.Header)
+		for h, val := range c.Request.Header {
+			proxyReq.Header[h] = val
+		}
+		if proxyReq.Header.Get("Content-Type") == "" {
+			proxyReq.Header.Set("Content-Type", "application/json")
+		}
+
+		client := &http.Client{Timeout: 120 * time.Second}
+		resp, err := client.Do(proxyReq)
+		if err != nil {
+			c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to proxy request to Ollama: " + err.Error()})
+			return
+		}
+		defer resp.Body.Close()
+
+		for key, values := range resp.Header {
+			if key == "Content-Encoding" && strings.Contains(strings.Join(values, ","), "gzip") {
+				continue
+			}
+			for _, value := range values {
+				c.Writer.Header().Add(key, value)
+			}
+		}
+		c.Writer.WriteHeader(resp.StatusCode)
+		io.Copy(c.Writer, resp.Body)
+		return
+	}
+
 	providerName := r.determineProviderFromModel(requestBody.Model)
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported model"})
@@ -127,51 +177,57 @@ func (r *Router) handleChat(c *gin.Context) {
 
 	providerImpl := provider.CreateProvider(prov)
 	if providerImpl == nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported provider"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported provider for model"})
 		return
 	}
 
 	responseContent, err := providerImpl.Chat(requestBody.Model, requestBody.Messages)
-
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Chat completion error: " + err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	fakeResponse := generateFakeOllamaResponse(requestBody.Model, responseContent)
+	c.JSON(http.StatusOK, fakeResponse)
+}
+
+func generateFakeOllamaResponse(modelID string, responseContent string) gin.H {
+	return gin.H{
 		"id":      "chatcmpl-" + generateID(),
 		"object":  "chat.completion",
-		"created": time.Now().Unix(),
-		"model":   requestBody.Model,
+		"created": timeNow().Unix(), // Use timeNow for testability
+		"model":   modelID,
 		"choices": []gin.H{
 			{
+				"index": 0,
 				"message": gin.H{
 					"role":    "assistant",
 					"content": responseContent,
 				},
 				"finish_reason": "stop",
-				"index":         0,
 			},
 		},
-	})
+		"usage": gin.H{
+			"prompt_tokens":     0,
+			"completion_tokens": 0,
+			"total_tokens":      0,
+		},
+	}
 }
 
-// determineProviderFromModel retrieves the provider name associated with a model ID from the database
 func (r *Router) determineProviderFromModel(modelID string) string {
 	if modelID == "" {
 		return ""
 	}
 
-	// Use the store instance from the Router struct to query the database
 	providers, err := r.store.GetActiveProviders()
 	if err != nil {
 		return ""
 	}
 
-	// Iterate through providers to find a matching model
 	for _, prov := range providers {
-		models, err := r.store.GetModelsByProviderID(prov.ID)
-		if err != nil {
+		models, errDb := r.store.GetModelsByProviderID(prov.ID)
+		if errDb != nil {
 			continue
 		}
 		for _, model := range models {
@@ -180,17 +236,15 @@ func (r *Router) determineProviderFromModel(modelID string) string {
 			}
 		}
 	}
-
-	// If no match found, return empty string
 	return ""
 }
 
 // generateID creates a simple unique ID for responses
+// It now uses timeNow() for testability.
 func generateID() string {
-	return fmt.Sprintf("%d", time.Now().Nanosecond())
+	return fmt.Sprintf("%d", timeNow().UnixNano())
 }
 
-// listTags retrieves and aggregates model tags from all active providers, presenting them as Ollama models
 func (r *Router) listTags(c *gin.Context) {
 	providers, err := r.store.GetActiveProviders()
 	if err != nil {
@@ -206,7 +260,6 @@ func (r *Router) listTags(c *gin.Context) {
 		}
 
 		var models []interface{}
-		// Try fetching models from provider API
 		m, err := providerImpl.GetModels()
 		if err == nil {
 			for _, model := range m {
@@ -219,10 +272,9 @@ func (r *Router) listTags(c *gin.Context) {
 			}
 		}
 
-		// If no models fetched from API or error occurred, fall back to local database models
 		if len(models) == 0 {
-			localModels, err := r.store.GetModelsByProviderID(prov.ID)
-			if err == nil {
+			localModels, errDb := r.store.GetModelsByProviderID(prov.ID)
+			if errDb == nil {
 				for _, model := range localModels {
 					if model.IsActive {
 						models = append(models, gin.H{
@@ -243,7 +295,6 @@ func (r *Router) listTags(c *gin.Context) {
 	})
 }
 
-// showModel retrieves detailed information about a specific model, presenting it as an Ollama model
 func (r *Router) showModel(c *gin.Context) {
 	var requestBody struct {
 		Name string `json:"model"`
@@ -273,7 +324,6 @@ func (r *Router) showModel(c *gin.Context) {
 			continue
 		}
 
-		// Try fetching models from provider API
 		m, err := providerImpl.GetModels()
 		if err == nil {
 			for _, model := range m {
@@ -300,8 +350,8 @@ func (r *Router) showModel(c *gin.Context) {
 		}
 
 		if !found {
-			localModels, err := r.store.GetModelsByProviderID(prov.ID)
-			if err == nil {
+			localModels, errDb := r.store.GetModelsByProviderID(prov.ID)
+			if errDb == nil {
 				for _, model := range localModels {
 					if model.IsActive && model.ModelID == requestBody.Name {
 						modelDetails = gin.H{
