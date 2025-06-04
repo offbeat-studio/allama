@@ -152,3 +152,39 @@ Allama is open-source software released under the [MIT License](LICENSE). You ar
 For questions or further information, you can reach out to the maintainers via GitHub issues or through the contact details provided in the repository.
 
 Thank you for using and contributing to Allama!
+
+## API Documentation
+
+This project uses Godoc for API documentation. The comments in the Go source code are formatted to be compatible with Godoc.
+
+To generate and view the documentation:
+
+1.  **Ensure Godoc is installed**:
+    If you don't have Godoc, you might need to install it. For newer Go versions (1.13+), the `go doc` command also provides some of these capabilities, but `godoc` is often preferred for local HTML serving.
+    You can try installing the standalone `godoc` tool if needed:
+    ```sh
+    go install golang.org/x/tools/cmd/godoc@latest
+    ```
+    Ensure that your `$(go env GOPATH)/bin` directory is in your system's `PATH`.
+
+2.  **Run the Godoc server**:
+    Navigate to the `src` directory of this project in your terminal and run:
+    ```sh
+    godoc -http=:6060
+    ```
+    This command starts a local web server on port 6060.
+
+3.  **View the documentation**:
+    Open your web browser and go to [http://localhost:6060/pkg/](http://localhost:6060/pkg/).
+    You should see a list of packages in the project. You can navigate to specific packages like `github.com/offbeat-studio/allama/internal/router` or `github.com/offbeat-studio/allama/internal/provider` to see their documentation.
+    (Note: The exact base path under `/pkg/` might depend on your Go workspace setup and the module path. If `github.com/offbeat-studio/allama` is your module name, then the path would be `http://localhost:6060/pkg/github.com/offbeat-studio/allama/` and then you can navigate to `internal/router`, etc.)
+
+Alternatively, to generate static HTML for a specific package (if your Godoc version supports it):
+```sh
+godoc -html path/to/your/package > package.html
+```
+For example, from the `src` directory:
+```sh
+godoc -html ./internal/router > router_docs.html
+```
+(Note: Some versions of `godoc` or `go doc` might have different flags or capabilities for generating static HTML or serving documentation. Refer to the tool's help (`godoc -help` or `go help doc`) if you encounter issues.)

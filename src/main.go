@@ -1,3 +1,6 @@
+// Package main is the entry point for the Allama application.
+// It handles application initialization, configuration loading,
+// database setup, and starts the HTTP server.
 package main
 
 import (

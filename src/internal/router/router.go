@@ -1,4 +1,7 @@
 // src/internal/router/router.go modification for testable time
+// Package router implements the HTTP routing for the Allama API.
+// It defines API endpoints and maps them to handler functions
+// that interact with providers and the storage layer.
 package router
 
 import (
@@ -19,14 +22,21 @@ import (
 var timeNow = time.Now
 
 
-// Router handles API routing and provider redirection logic
+// Router handles API routing and provider redirection logic.
+// It manages the interaction between incoming HTTP requests and the appropriate handlers,
+// as well as coordinating with storage and provider services.
 type Router struct {
-	cfg    *config.Config
-	store  *storage.Storage
-	router *gin.Engine
+	cfg    *config.Config   // cfg is the application configuration.
+	store  *storage.Storage // store provides access to the application's data storage.
+	router *gin.Engine      // router is the Gin HTTP router engine.
 }
 
-// NewRouter creates a new instance of Router with provider configurations
+// NewRouter creates a new instance of Router.
+// It initializes the router with application configuration, storage access, and the Gin engine.
+// cfg is the application configuration.
+// store is the storage instance.
+// engine is the Gin HTTP router engine.
+// It returns a pointer to the initialized Router.
 func NewRouter(cfg *config.Config, store *storage.Storage, engine *gin.Engine) *Router {
 	return &Router{
 		cfg:    cfg,
@@ -35,7 +45,8 @@ func NewRouter(cfg *config.Config, store *storage.Storage, engine *gin.Engine) *
 	}
 }
 
-// SetupRoutes defines the API endpoints and routing logic
+// SetupRoutes defines the API endpoints and maps them to their respective handler functions.
+// This method configures the HTTP routes for the application.
 func (r *Router) SetupRoutes() {
 	r.router.GET("/api/tags", r.listTags)
 	r.router.POST("/api/show", r.showModel)
@@ -44,6 +55,9 @@ func (r *Router) SetupRoutes() {
 	v1.POST("/chat/completions", r.handleChat)
 }
 
+// listModels handles requests to list available AI models.
+// It fetches active models from all configured providers and returns them in a structured format.
+// The response includes a list of models with their ID, object type, creation timestamp (dummy), and owner.
 func (r *Router) listModels(c *gin.Context) {
 	providers, err := r.store.GetActiveProviders()
 	if err != nil {
@@ -95,6 +109,15 @@ func (r *Router) listModels(c *gin.Context) {
 	})
 }
 
+// handleChat processes chat completion requests.
+// It determines the appropriate provider based on the requested model,
+// proxies the request to Ollama if the model is an Ollama model,
+// or forwards the request to the configured provider for other models.
+// The request body is expected to contain:
+//   - "model": string, the ID of the model to use.
+//   - "messages": []map[string]string, a list of messages in the chat history.
+//   - "stream": *bool (optional), whether to stream the response.
+// It returns a JSON response with the chat completion or an error.
 func (r *Router) handleChat(c *gin.Context) {
 	var requestBody struct {
 		Model    string              `json:"model"`
@@ -191,6 +214,10 @@ func (r *Router) handleChat(c *gin.Context) {
 	c.JSON(http.StatusOK, fakeResponse)
 }
 
+// generateFakeOllamaResponse creates a standardized Ollama-like JSON response for chat completions.
+// modelID is the ID of the model used.
+// responseContent is the content of the assistant's message.
+// It returns a gin.H map representing the JSON response.
 func generateFakeOllamaResponse(modelID string, responseContent string) gin.H {
 	return gin.H{
 		"id":      "chatcmpl-" + generateID(),
@@ -245,6 +272,9 @@ func generateID() string {
 	return fmt.Sprintf("%d", timeNow().UnixNano())
 }
 
+// listTags handles requests to list available model tags, similar to Ollama's /api/tags endpoint.
+// It retrieves models from active providers and formats them in a way that mimics Ollama's tag listing.
+// Each tag includes the model name, a fixed modification timestamp, size (dummy), and digest (dummy).
 func (r *Router) listTags(c *gin.Context) {
 	providers, err := r.store.GetActiveProviders()
 	if err != nil {
@@ -295,6 +325,11 @@ func (r *Router) listTags(c *gin.Context) {
 	})
 }
 
+// showModel handles requests to show details for a specific model, similar to Ollama's /api/show endpoint.
+// It expects a JSON request body with a "model" field specifying the model name.
+// It fetches details for the requested model from active providers and returns them in a structured format.
+// The details include license, modelfile content, parameters, template, and other model-specific information.
+// If the model is not found, it returns a 404 error.
 func (r *Router) showModel(c *gin.Context) {
 	var requestBody struct {
 		Name string `json:"model"`
