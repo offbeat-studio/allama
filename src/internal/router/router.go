@@ -57,6 +57,9 @@ func (r *Router) SetupRoutes() {
 
 	// Chat endpoint to handle chat requests and redirect to appropriate provider
 	v1.POST("/chat/completions", r.handleChat)
+
+	// Version endpoint to forward requests to Ollama
+	r.router.Any("/api/version", r.handleVersion)
 }
 
 // listModels retrieves and aggregates models from all active providers and local database
@@ -400,16 +403,34 @@ func (r *Router) showModel(c *gin.Context) {
 					}
 				}
 			}
+			if found {
+				break
+			}
 		}
-		if found {
-			break
-		}
-	}
 
-	if !found {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Model not found"})
+		if !found {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Model not found"})
+			return
+		}
+
+		c.JSON(http.StatusOK, modelDetails)
+	}
+}
+
+// handleVersion forwards a request directly to Ollama
+func (r *Router) handleVersion(c *gin.Context) {
+	providers, err := r.store.GetActiveProviders()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve providers"})
 		return
 	}
 
-	c.JSON(http.StatusOK, modelDetails)
+	for _, prov := range providers {
+		if prov.Name == "ollama" {
+			r.forwardOllamaRequest(c, prov, "/api/version")
+			return
+		}
+	}
+
+	c.JSON(http.StatusNotFound, gin.H{"error": "Ollama provider not found"})
 }

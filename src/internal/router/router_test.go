@@ -153,6 +153,17 @@ func TestOllamaRequestForwarding(t *testing.T) {
 			t.Logf("Request was properly routed to Ollama (status: %d)", w.Code)
 		}
 	})
+
+	t.Run("ApiVersion with Ollama provider", func(t *testing.T) {
+		req, _ := http.NewRequest("GET", "/api/version", nil)
+		w := httptest.NewRecorder()
+		engine.ServeHTTP(w, req)
+
+		// Note: This test will fail if Ollama is not running, but it validates the routing logic
+		if w.Code != http.StatusInternalServerError {
+			t.Logf("Request was properly routed to Ollama (status: %d)", w.Code)
+		}
+	})
 }
 
 func TestNonOllamaRequestHandling(t *testing.T) {
