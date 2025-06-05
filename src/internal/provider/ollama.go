@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
@@ -106,4 +107,40 @@ func (p *OllamaProvider) Chat(modelID string, messages []map[string]string) (str
 	}
 
 	return chatResp.Message.Content, nil
+}
+
+// ForwardRequest forwards a raw request to Ollama and returns the raw response
+func (p *OllamaProvider) ForwardRequest(method, path string, body []byte, headers map[string]string) ([]byte, int, error) {
+	url := fmt.Sprintf("%s%s", p.Host, path)
+
+	var req *http.Request
+	var err error
+
+	if body != nil {
+		req, err = http.NewRequest(method, url, bytes.NewBuffer(body))
+	} else {
+		req, err = http.NewRequest(method, url, nil)
+	}
+
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// Copy headers from the original request
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, resp.StatusCode, err
+	}
+
+	return responseBody, resp.StatusCode, nil
 }

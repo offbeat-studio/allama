@@ -2,24 +2,37 @@ package router
 
 import (
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/offbeat-studio/allama/internal/config"
+	"github.com/offbeat-studio/allama/internal/models"
 	"github.com/offbeat-studio/allama/internal/provider"
-	"github.com/offbeat-studio/allama/internal/storage"
 )
+
+// StorageInterface defines the interface that storage must implement
+type StorageInterface interface {
+	GetActiveProviders() ([]*models.Provider, error)
+	GetProviderByName(name string) (*models.Provider, error)
+	GetModelsByProviderID(providerID int) ([]models.Model, error)
+	AddProvider(provider *models.Provider) error
+	AddModel(model *models.Model) error
+	GetActiveModels() ([]models.Model, error)
+	Close() error
+	ResetDatabase(databasePath string) error
+}
 
 // Router handles API routing and provider redirection logic
 type Router struct {
 	cfg    *config.Config
-	store  *storage.Storage
+	store  StorageInterface
 	router *gin.Engine
 }
 
 // NewRouter creates a new instance of Router with provider configurations
-func NewRouter(cfg *config.Config, store *storage.Storage, engine *gin.Engine) *Router {
+func NewRouter(cfg *config.Config, store StorageInterface, engine *gin.Engine) *Router {
 	return &Router{
 		cfg:    cfg,
 		store:  store,
@@ -102,6 +115,7 @@ func (r *Router) listModels(c *gin.Context) {
 
 // handleChat processes chat requests and redirects to the appropriate provider
 func (r *Router) handleChat(c *gin.Context) {
+	// Determine provider based on model ID using database lookup
 	var requestBody struct {
 		Model    string              `json:"model"`
 		Messages []map[string]string `json:"messages"`
@@ -112,7 +126,6 @@ func (r *Router) handleChat(c *gin.Context) {
 		return
 	}
 
-	// Determine provider based on model ID using database lookup
 	providerName := r.determineProviderFromModel(requestBody.Model)
 	if providerName == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported model"})
@@ -125,6 +138,13 @@ func (r *Router) handleChat(c *gin.Context) {
 		return
 	}
 
+	// If provider is Ollama, forward the request directly
+	if providerName == "ollama" {
+		r.forwardOllamaRequest(c, prov, "/api/chat")
+		return
+	}
+
+	// For other providers, use the existing logic
 	providerImpl := provider.CreateProvider(prov)
 	if providerImpl == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported provider"})
@@ -154,6 +174,42 @@ func (r *Router) handleChat(c *gin.Context) {
 			},
 		},
 	})
+}
+
+// forwardOllamaRequest forwards a request directly to Ollama
+func (r *Router) forwardOllamaRequest(c *gin.Context, prov *models.Provider, path string) {
+	// Read the request body (only if it exists)
+	var body []byte
+	var err error
+	if c.Request.Body != nil {
+		body, err = io.ReadAll(c.Request.Body)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
+			return
+		}
+	}
+
+	// Create Ollama provider instance
+	ollamaProvider := provider.NewOllamaProvider(prov.Host)
+
+	// Prepare headers
+	headers := make(map[string]string)
+	for key, values := range c.Request.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+
+	// Forward the request
+	responseBody, statusCode, err := ollamaProvider.ForwardRequest(c.Request.Method, path, body, headers)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Set the response content type to JSON
+	c.Header("Content-Type", "application/json")
+	c.Data(statusCode, "application/json", responseBody)
 }
 
 // determineProviderFromModel retrieves the provider name associated with a model ID from the database
@@ -198,6 +254,15 @@ func (r *Router) listTags(c *gin.Context) {
 		return
 	}
 
+	// Check if there's an active Ollama provider and forward the request directly
+	for _, prov := range providers {
+		if prov.Name == "ollama" {
+			r.forwardOllamaRequest(c, prov, "/api/tags")
+			return
+		}
+	}
+
+	// If no Ollama provider found, use the existing aggregation logic
 	var allModels []interface{}
 	for _, prov := range providers {
 		providerImpl := provider.CreateProvider(prov)
@@ -259,6 +324,17 @@ func (r *Router) showModel(c *gin.Context) {
 		return
 	}
 
+	// Determine provider based on model ID using database lookup
+	providerName := r.determineProviderFromModel(requestBody.Name)
+	if providerName == "ollama" {
+		prov, err := r.store.GetProviderByName(providerName)
+		if err == nil && prov != nil {
+			r.forwardOllamaRequest(c, prov, "/api/show")
+			return
+		}
+	}
+
+	// If not Ollama or Ollama provider not found, use the existing aggregation logic
 	providers, err := r.store.GetActiveProviders()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve providers"})
