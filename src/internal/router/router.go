@@ -1,6 +1,7 @@
 package router
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -51,14 +52,14 @@ func NewRouter(cfg *config.Config, store StorageInterface, engine *gin.Engine) *
 func (r *Router) SetupRoutes() {
 	// ollama API
 	r.router.GET("/api/tags", r.listTags)
-	r.router.POST("/api/show", r.showModel)
+	r.router.POST("/api/show", r.showModelWithRawBody)
 
 	// API version 1 group
 	v1 := r.router.Group("/api/v1")
 	v1.GET("/models", r.listModels)
 	v1.POST("/chat/completions", r.handleChat)
 
-	r.router.Any("/api/version", r.handleVersion)
+	r.router.GET("/api/version", r.handleVersion)
 }
 
 // listModels retrieves and aggregates models from all active providers and local database
@@ -293,13 +294,19 @@ func (r *Router) listTags(c *gin.Context) {
 	})
 }
 
-// showModel retrieves detailed information about a specific model, presenting it as an Ollama model
-func (r *Router) showModel(c *gin.Context) {
+// showModelWithRawBody retrieves detailed information about a specific model, reading raw request body once and forwarding it to Ollama
+func (r *Router) showModelWithRawBody(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
+		return
+	}
+
 	var requestBody struct {
 		Name string `json:"model"`
 	}
 
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
+	if err := json.Unmarshal(body, &requestBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
@@ -313,7 +320,7 @@ func (r *Router) showModel(c *gin.Context) {
 	if providerName == "ollama" {
 		prov, err := r.store.GetProviderByName(providerName)
 		if err == nil && prov != nil {
-			r.forwardOllamaRequest(c, prov, "/api/show")
+			r.forwardOllamaRequestWithBody(c, prov, "/api/show", body)
 			return
 		}
 	}
@@ -395,6 +402,27 @@ func (r *Router) showModel(c *gin.Context) {
 			c.JSON(http.StatusOK, modelDetails)
 		}
 	}
+}
+
+// forwardOllamaRequestWithBody forwards a request directly to Ollama with a provided raw body
+func (r *Router) forwardOllamaRequestWithBody(c *gin.Context, prov *models.Provider, path string, body []byte) {
+	ollamaProvider := provider.NewOllamaProvider(prov.Host)
+
+	headers := make(map[string]string)
+	for key, values := range c.Request.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+
+	responseBody, statusCode, err := ollamaProvider.ForwardRequest(c.Request.Method, path, body, headers)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Header("Content-Type", "application/json")
+	c.Data(statusCode, "application/json", responseBody)
 }
 
 // handleVersion forwards a request directly to Ollama
