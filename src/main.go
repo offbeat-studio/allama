@@ -2,7 +2,6 @@ package main
 
 import (
 	"log"
-
 	"os"
 
 	"github.com/gin-gonic/gin"
