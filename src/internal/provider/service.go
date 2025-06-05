@@ -1,7 +1,9 @@
 package provider
 
 import (
+	"encoding/json"
 	"log"
+	"time"
 
 	"github.com/offbeat-studio/allama/internal/models"
 	"github.com/offbeat-studio/allama/internal/storage"
@@ -11,6 +13,47 @@ import (
 type ProviderInterface interface {
 	GetModels() ([]models.Model, error)
 	Chat(modelID string, messages []map[string]string) (string, error)
+}
+
+// ResponseTransformer defines the interface for transforming provider responses to Ollama format
+type ResponseTransformer interface {
+	TransformChatResponse(content string, modelID string) ([]byte, error)
+	TransformGenerateResponse(content string, modelID string) ([]byte, error)
+}
+
+// OllamaResponseTransformer transforms responses to match Ollama's response formats
+type OllamaResponseTransformer struct{}
+
+// NewOllamaResponseTransformer creates a new instance of OllamaResponseTransformer
+func NewOllamaResponseTransformer() *OllamaResponseTransformer {
+	return &OllamaResponseTransformer{}
+}
+
+// TransformChatResponse transforms a simple string response to Ollama's chat response format
+func (t *OllamaResponseTransformer) TransformChatResponse(content string, modelID string) ([]byte, error) {
+	response := map[string]interface{}{
+		"model":      modelID,
+		"created_at": time.Now().Format(time.RFC3339),
+		"message": map[string]interface{}{
+			"role":    "assistant",
+			"content": content,
+		},
+		"done": true,
+	}
+
+	return json.Marshal(response)
+}
+
+// TransformGenerateResponse transforms a simple string response to Ollama's generate response format
+func (t *OllamaResponseTransformer) TransformGenerateResponse(content string, modelID string) ([]byte, error) {
+	response := map[string]interface{}{
+		"model":      modelID,
+		"created_at": time.Now().Format(time.RFC3339),
+		"response":   content,
+		"done":       true,
+	}
+
+	return json.Marshal(response)
 }
 
 // CreateProvider creates an instance of the appropriate provider based on the provider name.

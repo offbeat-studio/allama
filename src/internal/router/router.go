@@ -1,6 +1,7 @@
 package router
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -48,7 +49,6 @@ func NewRouter(cfg *config.Config, store StorageInterface, engine *gin.Engine) *
 	return r
 }
 
-// SetupRoutes defines the API endpoints and routing logic
 func (r *Router) SetupRoutes() {
 	// ollama API
 	r.router.GET("/api/tags", r.listTags)
@@ -59,6 +59,9 @@ func (r *Router) SetupRoutes() {
 	v1.GET("/models", r.listModels)
 	v1.POST("/chat/completions", r.handleChat)
 
+	// New endpoints
+	r.router.POST("/api/generate", r.handleGenerate)
+	r.router.POST("/api/chat", r.handleChat)
 	r.router.GET("/api/version", r.handleVersion)
 }
 
@@ -114,11 +117,115 @@ func (r *Router) listModels(c *gin.Context) {
 	})
 }
 
-// handleChat processes chat requests and redirects to the appropriate provider
 func (r *Router) handleChat(c *gin.Context) {
+	defer func() {
+		if rec := recover(); rec != nil {
+			errMsg := fmt.Sprintf("panic recovered in handleChat: %v", rec)
+			fmt.Println(errMsg)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": errMsg})
+		}
+	}()
+
+	// Read raw body first
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		fmt.Printf("handleChat: failed to read request body: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
+		return
+	}
+	// Reset body for further reading
+	c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+
+	// Determine provider from model in raw body
+	var temp struct {
+		Model string `json:"model"`
+	}
+	if err := json.Unmarshal(body, &temp); err != nil {
+		fmt.Printf("handleChat: invalid request body: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	providerName := r.determineProviderFromModel(temp.Model)
+	if providerName == "" {
+		fmt.Println("handleChat: unsupported model")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported model"})
+		return
+	}
+
+	prov, err := r.store.GetProviderByName(providerName)
+	if err != nil || prov == nil {
+		fmt.Printf("handleChat: provider not found: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Provider not found"})
+		return
+	}
+
+	if providerName == "ollama" {
+		// Forward raw body directly to Ollama
+		r.forwardOllamaRequestWithBody(c, prov, "/api/chat", body)
+		return
+	}
+
+	// For other providers, unmarshal into struct
+	type Message struct {
+		Role    string `json:"role"`
+		Content string `json:"content"`
+	}
+
 	var requestBody struct {
-		Model    string              `json:"model"`
-		Messages []map[string]string `json:"messages"`
+		Model    string    `json:"model"`
+		Messages []Message `json:"messages"`
+	}
+
+	if err := json.Unmarshal(body, &requestBody); err != nil {
+		fmt.Printf("handleChat: invalid request body: %v\n", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	providerImpl := provider.CreateProvider(prov)
+	if providerImpl == nil {
+		fmt.Println("handleChat: unsupported provider")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported provider"})
+		return
+	}
+
+	// Convert []Message to []map[string]string for providerImpl.Chat
+	messages := make([]map[string]string, len(requestBody.Messages))
+	for i, msg := range requestBody.Messages {
+		messages[i] = map[string]string{
+			"role":    msg.Role,
+			"content": msg.Content,
+		}
+	}
+
+	responseContent, err := providerImpl.Chat(requestBody.Model, messages)
+
+	if err != nil {
+		fmt.Printf("handleChat: provider chat error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Transform response to Ollama format for non-Ollama providers
+	transformer := provider.NewOllamaResponseTransformer()
+	transformedResponse, err := transformer.TransformChatResponse(responseContent, requestBody.Model)
+	if err != nil {
+		fmt.Printf("handleChat: response transformation error: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to transform response"})
+		return
+	}
+
+	c.Header("Content-Type", "application/json")
+	c.Data(http.StatusOK, "application/json", transformedResponse)
+}
+
+// handleGenerate processes generate requests and redirects to the appropriate provider
+func (r *Router) handleGenerate(c *gin.Context) {
+	var requestBody struct {
+		Model  string                 `json:"model"`
+		Prompt string                 `json:"prompt"`
+		Params map[string]interface{} `json:"parameters"`
 	}
 
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
@@ -139,7 +246,7 @@ func (r *Router) handleChat(c *gin.Context) {
 	}
 
 	if providerName == "ollama" {
-		r.forwardOllamaRequest(c, prov, "/api/chat")
+		r.forwardOllamaRequest(c, prov, "/api/generate")
 		return
 	}
 
@@ -149,29 +256,29 @@ func (r *Router) handleChat(c *gin.Context) {
 		return
 	}
 
-	responseContent, err := providerImpl.Chat(requestBody.Model, requestBody.Messages)
+	// Since providerImpl does not have Generate method, use Chat with prompt wrapped as message
+	responseContent, err := providerImpl.Chat(requestBody.Model, []map[string]string{
+		{
+			"role":    "user",
+			"content": requestBody.Prompt,
+		},
+	})
 
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":      "chatcmpl-" + generateID(),
-		"object":  "chat.completion",
-		"created": time.Now().Unix(),
-		"model":   requestBody.Model,
-		"choices": []gin.H{
-			{
-				"message": gin.H{
-					"role":    "assistant",
-					"content": responseContent,
-				},
-				"finish_reason": "stop",
-				"index":         0,
-			},
-		},
-	})
+	// Transform response to Ollama generate format for non-Ollama providers
+	transformer := provider.NewOllamaResponseTransformer()
+	transformedResponse, err := transformer.TransformGenerateResponse(responseContent, requestBody.Model)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to transform response"})
+		return
+	}
+
+	c.Header("Content-Type", "application/json")
+	c.Data(http.StatusOK, "application/json", transformedResponse)
 }
 
 // forwardOllamaRequest forwards a request directly to Ollama
@@ -184,6 +291,42 @@ func (r *Router) forwardOllamaRequest(c *gin.Context, prov *models.Provider, pat
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
 			return
 		}
+		// Log the request body for debugging
+		fmt.Printf("forwardOllamaRequest: forwarding body: %s\n", string(body))
+		// Log headers for debugging
+		for key, values := range c.Request.Header {
+			fmt.Printf("forwardOllamaRequest: header %s: %v\n", key, values)
+		}
+		// Reset the request body so it can be read again if needed
+		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
+	}
+
+	ollamaProvider := provider.NewOllamaProvider(prov.Host)
+
+	headers := make(map[string]string)
+	for key, values := range c.Request.Header {
+		if len(values) > 0 {
+			headers[key] = values[0]
+		}
+	}
+
+	responseBody, statusCode, err := ollamaProvider.ForwardRequest(c.Request.Method, path, body, headers)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.Header("Content-Type", "application/json")
+	c.Data(statusCode, "application/json", responseBody)
+}
+
+// forwardOllamaRequestWithBody forwards a request with a specific body to Ollama
+func (r *Router) forwardOllamaRequestWithBody(c *gin.Context, prov *models.Provider, path string, body []byte) {
+	// Log the request body for debugging
+	fmt.Printf("forwardOllamaRequestWithBody: forwarding body: %s\n", string(body))
+	// Log headers for debugging
+	for key, values := range c.Request.Header {
+		fmt.Printf("forwardOllamaRequestWithBody: header %s: %v\n", key, values)
 	}
 
 	ollamaProvider := provider.NewOllamaProvider(prov.Host)
@@ -244,14 +387,8 @@ func (r *Router) listTags(c *gin.Context) {
 		return
 	}
 
-	for _, prov := range providers {
-		if prov.Name == "ollama" {
-			r.forwardOllamaRequest(c, prov, "/api/tags")
-			return
-		}
-	}
-
 	var allModels []interface{}
+
 	for _, prov := range providers {
 		providerImpl := provider.CreateProvider(prov)
 		if providerImpl == nil {
@@ -294,151 +431,76 @@ func (r *Router) listTags(c *gin.Context) {
 	})
 }
 
-// showModelWithRawBody retrieves detailed information about a specific model, reading raw request body once and forwarding it to Ollama
+// showModelWithRawBody handles the /api/show endpoint by forwarding to Ollama
 func (r *Router) showModelWithRawBody(c *gin.Context) {
+	// Read raw body first
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
+		fmt.Printf("showModelWithRawBody: failed to read request body: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
 		return
 	}
 
-	var requestBody struct {
+	// Determine provider from model in raw body
+	var temp struct {
 		Name string `json:"model"`
 	}
-
-	if err := json.Unmarshal(body, &requestBody); err != nil {
+	if err := json.Unmarshal(body, &temp); err != nil {
+		fmt.Printf("showModelWithRawBody: invalid request body: %v\n", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return
 	}
 
-	if requestBody.Name == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Model name is required"})
+	providerName := r.determineProviderFromModel(temp.Name)
+	if providerName == "" {
+		fmt.Println("showModelWithRawBody: unsupported model")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Unsupported model"})
 		return
 	}
 
-	providerName := r.determineProviderFromModel(requestBody.Name)
+	prov, err := r.store.GetProviderByName(providerName)
+	if err != nil || prov == nil {
+		fmt.Printf("showModelWithRawBody: provider not found: %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Provider not found"})
+		return
+	}
+
 	if providerName == "ollama" {
-		prov, err := r.store.GetProviderByName(providerName)
-		if err == nil && prov != nil {
-			r.forwardOllamaRequestWithBody(c, prov, "/api/show", body)
-			return
-		}
-	}
-
-	// If not Ollama or Ollama provider not found, use the existing aggregation logic
-	providers, err := r.store.GetActiveProviders()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve providers"})
+		// Forward raw body directly to Ollama
+		r.forwardOllamaRequestWithBody(c, prov, "/api/show", body)
 		return
 	}
 
-	var modelDetails interface{}
-	found := false
-	for _, prov := range providers {
-		providerImpl := provider.CreateProvider(prov)
-		if providerImpl == nil {
-			continue
-		}
-
-		m, err := providerImpl.GetModels()
-		if err == nil {
-			for _, model := range m {
-				if model.ModelID == requestBody.Name {
-					modelDetails = gin.H{
-						"license":    "Unknown",
-						"modelfile":  fmt.Sprintf("# Model information for %s model", prov.Name),
-						"parameters": "N/A",
-						"template":   "{{ .Prompt }}",
-						"system":     "You are a helpful AI assistant.",
-						"details": gin.H{
-							"parent_model":       "",
-							"format":             "gguf",
-							"family":             prov.Name,
-							"families":           []string{prov.Name},
-							"parameter_size":     "unknown",
-							"quantization_level": "N/A",
-						},
-					}
-					found = true
-					break
-				}
-			}
-		}
-
-		if !found {
-			localModels, err := r.store.GetModelsByProviderID(prov.ID)
-			if err == nil {
-				for _, model := range localModels {
-					if model.IsActive {
-						modelDetails = gin.H{
-							"license":    "Unknown",
-							"modelfile":  "# Model information from local database",
-							"parameters": "N/A",
-							"template":   "{{ .Prompt }}",
-							"system":     "You are a helpful AI assistant.",
-							"details": gin.H{
-								"parent_model":       "",
-								"format":             "gguf",
-								"family":             prov.Name,
-								"families":           []string{prov.Name},
-								"parameter_size":     "unknown",
-								"quantization_level": "N/A",
-							},
-						}
-						found = true
-						break
-					}
-				}
-				if found {
-					break
-				}
-			}
-
-			if !found {
-				c.JSON(http.StatusNotFound, gin.H{"error": "Model not found"})
-				return
-			}
-
-			c.JSON(http.StatusOK, modelDetails)
-		}
-	}
+	// For non-Ollama providers, return a response matching Ollama API format
+	c.JSON(http.StatusOK, gin.H{
+		"license":    "",
+		"modelfile":  fmt.Sprintf("# Model: %s\n# Provider: %s", temp.Name, providerName),
+		"parameters": "",
+		"template":   "",
+		"details": gin.H{
+			"parent_model":       "",
+			"format":             "gguf",
+			"family":             "llama",
+			"families":           []string{"llama"},
+			"parameter_size":     "7B",
+			"quantization_level": "Q4_0",
+		},
+		"model_info": gin.H{
+			"general.architecture":       "llama",
+			"general.file_type":          2,
+			"general.parameter_count":    7000000000,
+			"llama.context_length":       4096,
+			"llama.embedding_length":     4096,
+			"llama.block_count":          32,
+			"llama.attention.head_count": 32,
+		},
+		"capabilities": []string{"completion"},
+	})
 }
 
-// forwardOllamaRequestWithBody forwards a request directly to Ollama with a provided raw body
-func (r *Router) forwardOllamaRequestWithBody(c *gin.Context, prov *models.Provider, path string, body []byte) {
-	ollamaProvider := provider.NewOllamaProvider(prov.Host)
-
-	headers := make(map[string]string)
-	for key, values := range c.Request.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
-
-	responseBody, statusCode, err := ollamaProvider.ForwardRequest(c.Request.Method, path, body, headers)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-
-	c.Header("Content-Type", "application/json")
-	c.Data(statusCode, "application/json", responseBody)
-}
-
-// handleVersion forwards a request directly to Ollama
+// handleVersion handles the /api/version endpoint
 func (r *Router) handleVersion(c *gin.Context) {
-	providers, err := r.store.GetActiveProviders()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve providers"})
-		return
-	}
-
-	for _, prov := range providers {
-		if prov.Name == "ollama" {
-			r.forwardOllamaRequest(c, prov, "/api/version")
-			return
-		}
-	}
-
-	c.JSON(http.StatusNotFound, gin.H{"error": "Ollama provider not found"})
+	c.JSON(http.StatusOK, gin.H{
+		"version": "0.1.0",
+	})
 }
