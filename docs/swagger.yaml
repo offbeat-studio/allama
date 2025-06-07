@@ -1,0 +1,403 @@
+basePath: /api/v1
+definitions:
+  models.ChatRequest:
+    properties:
+      messages:
+        items:
+          $ref: '#/definitions/models.Message'
+        type: array
+      model:
+        type: string
+    type: object
+  models.ErrorResponse:
+    properties:
+      error:
+        type: string
+    type: object
+  models.GenerateRequest:
+    properties:
+      model:
+        type: string
+      parameters:
+        additionalProperties: true
+        description: omitempty if you want to allow no params
+        type: object
+      prompt:
+        type: string
+    type: object
+  models.ListModelsResponse:
+    properties:
+      data:
+        items:
+          $ref: '#/definitions/models.ModelEntry'
+        type: array
+      object:
+        description: Typically "list"
+        type: string
+    type: object
+  models.ListTagsResponse:
+    properties:
+      models:
+        items:
+          $ref: '#/definitions/models.TagEntry'
+        type: array
+    type: object
+  models.Message:
+    properties:
+      content:
+        type: string
+      role:
+        type: string
+    type: object
+  models.ModelEntry:
+    properties:
+      created:
+        description: Timestamp, using int64 for flexibility
+        type: integer
+      id:
+        type: string
+      object:
+        description: Typically "model"
+        type: string
+      owned_by:
+        type: string
+    type: object
+  models.OllamaChatCompletionChoice:
+    properties:
+      finish_reason:
+        type: string
+      index:
+        type: integer
+      message:
+        $ref: '#/definitions/models.OllamaChatCompletionMessage'
+    type: object
+  models.OllamaChatCompletionMessage:
+    properties:
+      content:
+        type: string
+      role:
+        type: string
+    type: object
+  models.OllamaChatCompletionResponse:
+    properties:
+      choices:
+        items:
+          $ref: '#/definitions/models.OllamaChatCompletionChoice'
+        type: array
+      created:
+        type: integer
+      id:
+        type: string
+      model:
+        type: string
+      object:
+        description: e.g., "chat.completion"
+        type: string
+    type: object
+  models.OllamaGenerateResponse:
+    properties:
+      created_at:
+        description: Timestamp string
+        type: string
+      done:
+        type: boolean
+      model:
+        type: string
+      response:
+        type: string
+    type: object
+  models.ShowModelDetail:
+    properties:
+      families:
+        items:
+          type: string
+        type: array
+      family:
+        type: string
+      format:
+        type: string
+      parameter_size:
+        type: string
+      parent_model:
+        type: string
+      quantization_level:
+        type: string
+    type: object
+  models.ShowModelInfo:
+    properties:
+      general.architecture:
+        type: string
+      general.file_type:
+        type: integer
+      general.parameter_count:
+        description: Using uint64 for large numbers
+        type: integer
+      llama.attention.head_count:
+        type: integer
+      llama.block_count:
+        type: integer
+      llama.context_length:
+        type: integer
+      llama.embedding_length:
+        type: integer
+    type: object
+  models.ShowModelRequest:
+    properties:
+      model:
+        type: string
+    type: object
+  models.ShowModelResponse:
+    properties:
+      capabilities:
+        items:
+          type: string
+        type: array
+      details:
+        $ref: '#/definitions/models.ShowModelDetail'
+      license:
+        type: string
+      model_info:
+        $ref: '#/definitions/models.ShowModelInfo'
+      modelfile:
+        type: string
+      parameters:
+        type: string
+      template:
+        type: string
+    type: object
+  models.TagEntry:
+    properties:
+      digest:
+        type: string
+      modified_at:
+        type: string
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
+  models.VersionResponse:
+    properties:
+      version:
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@yourapi.com
+    name: API Support
+    url: http://yourapi.com/support
+  description: This is the Allama API server.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://yourapi.com/terms
+  title: Allama API
+  version: "1.0"
+paths:
+  /api/chat:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Processes a chat request. If the model is from Ollama, the request is forwarded directly.
+        For other providers, the request is processed, and the response is transformed into Ollama's chat completion format.
+        The provider is determined based on the 'model' field in the request body.
+      parameters:
+      - description: Chat request payload. The 'model' field is used to determine
+          the provider.
+        in: body
+        name: chatRequest
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Chat completion response, formatted like Ollama's /api/chat
+            response.
+          schema:
+            $ref: '#/definitions/models.OllamaChatCompletionResponse'
+        "400":
+          description: Bad request if the request body is invalid, model is missing,
+            or model/provider is unsupported.
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal server error if provider cannot be found or if there's
+            an error during processing or response transformation.
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Generate chat completions
+      tags:
+      - Chat
+  /api/generate:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Processes a generate request. If the model is from Ollama, the request is forwarded directly.
+        For other providers, the request is adapted (using chat endpoint) and the response is transformed into Ollama's generate format.
+        The provider is determined based on the 'model' field in the request body.
+      parameters:
+      - description: Generate request payload. The 'model' field is used to determine
+          the provider.
+        in: body
+        name: generateRequest
+        required: true
+        schema:
+          $ref: '#/definitions/models.GenerateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Generate response, formatted like Ollama''s /api/generate
+            response. Note: This might be a single (final) response object even if
+            the underlying provider streams.'
+          schema:
+            $ref: '#/definitions/models.OllamaGenerateResponse'
+        "400":
+          description: Bad request if the request body is invalid or model/provider
+            is unsupported.
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal server error if provider cannot be found or if there's
+            an error during processing or response transformation.
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Generate text based on a prompt
+      tags:
+      - Generate
+  /api/show:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Retrieves information about a specific model. If the model is from Ollama, the request is forwarded directly.
+        For other providers, a mock response is generated that mimics Ollama's /api/show format.
+        The provider is determined based on the 'model' field (or 'name' if that was the intended field for ShowModelRequest) in the request body.
+      parameters:
+      - description: Request payload containing the model name. The 'model' field
+          is used to determine the provider.
+        in: body
+        name: showRequest
+        required: true
+        schema:
+          $ref: '#/definitions/models.ShowModelRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Detailed information about the model, formatted like Ollama's
+            /api/show response.
+          schema:
+            $ref: '#/definitions/models.ShowModelResponse'
+        "400":
+          description: Bad request if the request body is invalid or model/provider
+            is unsupported.
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal server error if provider cannot be found.
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Show model information (Ollama compatible)
+      tags:
+      - Models
+  /api/tags:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Retrieves a list of all available model tags from active providers and the local database.
+        The response is formatted to be compatible with Ollama's /api/tags endpoint.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: A list of available model tags
+          schema:
+            $ref: '#/definitions/models.ListTagsResponse'
+        "500":
+          description: Internal server error if providers cannot be retrieved
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: List available model tags (Ollama compatible)
+      tags:
+      - Models
+  /api/v1/chat/completions:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Processes a chat request. If the model is from Ollama, the request is forwarded directly.
+        For other providers, the request is processed, and the response is transformed into Ollama's chat completion format.
+        The provider is determined based on the 'model' field in the request body.
+      parameters:
+      - description: Chat request payload. The 'model' field is used to determine
+          the provider.
+        in: body
+        name: chatRequest
+        required: true
+        schema:
+          $ref: '#/definitions/models.ChatRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Chat completion response, formatted like Ollama's /api/chat
+            response.
+          schema:
+            $ref: '#/definitions/models.OllamaChatCompletionResponse'
+        "400":
+          description: Bad request if the request body is invalid, model is missing,
+            or model/provider is unsupported.
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+        "500":
+          description: Internal server error if provider cannot be found or if there's
+            an error during processing or response transformation.
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: Generate chat completions
+      tags:
+      - Chat
+  /api/v1/models:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Retrieves a list of all available models from active providers and the local database.
+        Models are presented in a format similar to OpenAI's /v1/models endpoint.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: A list of available models
+          schema:
+            $ref: '#/definitions/models.ListModelsResponse'
+        "500":
+          description: Internal server error if providers cannot be retrieved
+          schema:
+            $ref: '#/definitions/models.ErrorResponse'
+      summary: List available models
+      tags:
+      - Models
+  /api/version:
+    get:
+      consumes:
+      - application/json
+      description: Returns the current version of the API.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: API version information
+          schema:
+            $ref: '#/definitions/models.VersionResponse'
+      summary: Get API version
+      tags:
+      - Version
+swagger: "2.0"

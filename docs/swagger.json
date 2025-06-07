@@ -1,0 +1,565 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "This is the Allama API server.",
+        "title": "Allama API",
+        "termsOfService": "http://yourapi.com/terms",
+        "contact": {
+            "name": "API Support",
+            "url": "http://yourapi.com/support",
+            "email": "support@yourapi.com"
+        },
+        "license": {
+            "name": "Apache 2.0",
+            "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+        },
+        "version": "1.0"
+    },
+    "host": "localhost:8080",
+    "basePath": "/api/v1",
+    "paths": {
+        "/api/chat": {
+            "post": {
+                "description": "Processes a chat request. If the model is from Ollama, the request is forwarded directly.\nFor other providers, the request is processed, and the response is transformed into Ollama's chat completion format.\nThe provider is determined based on the 'model' field in the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Generate chat completions",
+                "parameters": [
+                    {
+                        "description": "Chat request payload. The 'model' field is used to determine the provider.",
+                        "name": "chatRequest",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Chat completion response, formatted like Ollama's /api/chat response.",
+                        "schema": {
+                            "$ref": "#/definitions/models.OllamaChatCompletionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request if the request body is invalid, model is missing, or model/provider is unsupported.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error if provider cannot be found or if there's an error during processing or response transformation.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/generate": {
+            "post": {
+                "description": "Processes a generate request. If the model is from Ollama, the request is forwarded directly.\nFor other providers, the request is adapted (using chat endpoint) and the response is transformed into Ollama's generate format.\nThe provider is determined based on the 'model' field in the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Generate"
+                ],
+                "summary": "Generate text based on a prompt",
+                "parameters": [
+                    {
+                        "description": "Generate request payload. The 'model' field is used to determine the provider.",
+                        "name": "generateRequest",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.GenerateRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Generate response, formatted like Ollama's /api/generate response. Note: This might be a single (final) response object even if the underlying provider streams.",
+                        "schema": {
+                            "$ref": "#/definitions/models.OllamaGenerateResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request if the request body is invalid or model/provider is unsupported.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error if provider cannot be found or if there's an error during processing or response transformation.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/show": {
+            "post": {
+                "description": "Retrieves information about a specific model. If the model is from Ollama, the request is forwarded directly.\nFor other providers, a mock response is generated that mimics Ollama's /api/show format.\nThe provider is determined based on the 'model' field (or 'name' if that was the intended field for ShowModelRequest) in the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Models"
+                ],
+                "summary": "Show model information (Ollama compatible)",
+                "parameters": [
+                    {
+                        "description": "Request payload containing the model name. The 'model' field is used to determine the provider.",
+                        "name": "showRequest",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ShowModelRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Detailed information about the model, formatted like Ollama's /api/show response.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ShowModelResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request if the request body is invalid or model/provider is unsupported.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error if provider cannot be found.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/tags": {
+            "get": {
+                "description": "Retrieves a list of all available model tags from active providers and the local database.\nThe response is formatted to be compatible with Ollama's /api/tags endpoint.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Models"
+                ],
+                "summary": "List available model tags (Ollama compatible)",
+                "responses": {
+                    "200": {
+                        "description": "A list of available model tags",
+                        "schema": {
+                            "$ref": "#/definitions/models.ListTagsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error if providers cannot be retrieved",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/chat/completions": {
+            "post": {
+                "description": "Processes a chat request. If the model is from Ollama, the request is forwarded directly.\nFor other providers, the request is processed, and the response is transformed into Ollama's chat completion format.\nThe provider is determined based on the 'model' field in the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Chat"
+                ],
+                "summary": "Generate chat completions",
+                "parameters": [
+                    {
+                        "description": "Chat request payload. The 'model' field is used to determine the provider.",
+                        "name": "chatRequest",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ChatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Chat completion response, formatted like Ollama's /api/chat response.",
+                        "schema": {
+                            "$ref": "#/definitions/models.OllamaChatCompletionResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad request if the request body is invalid, model is missing, or model/provider is unsupported.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error if provider cannot be found or if there's an error during processing or response transformation.",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/models": {
+            "get": {
+                "description": "Retrieves a list of all available models from active providers and the local database.\nModels are presented in a format similar to OpenAI's /v1/models endpoint.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Models"
+                ],
+                "summary": "List available models",
+                "responses": {
+                    "200": {
+                        "description": "A list of available models",
+                        "schema": {
+                            "$ref": "#/definitions/models.ListModelsResponse"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error if providers cannot be retrieved",
+                        "schema": {
+                            "$ref": "#/definitions/models.ErrorResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/version": {
+            "get": {
+                "description": "Returns the current version of the API.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Version"
+                ],
+                "summary": "Get API version",
+                "responses": {
+                    "200": {
+                        "description": "API version information",
+                        "schema": {
+                            "$ref": "#/definitions/models.VersionResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "models.ChatRequest": {
+            "type": "object",
+            "properties": {
+                "messages": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.Message"
+                    }
+                },
+                "model": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ErrorResponse": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.GenerateRequest": {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "description": "omitempty if you want to allow no params",
+                    "type": "object",
+                    "additionalProperties": true
+                },
+                "prompt": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ListModelsResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.ModelEntry"
+                    }
+                },
+                "object": {
+                    "description": "Typically \"list\"",
+                    "type": "string"
+                }
+            }
+        },
+        "models.ListTagsResponse": {
+            "type": "object",
+            "properties": {
+                "models": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.TagEntry"
+                    }
+                }
+            }
+        },
+        "models.Message": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ModelEntry": {
+            "type": "object",
+            "properties": {
+                "created": {
+                    "description": "Timestamp, using int64 for flexibility",
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "object": {
+                    "description": "Typically \"model\"",
+                    "type": "string"
+                },
+                "owned_by": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.OllamaChatCompletionChoice": {
+            "type": "object",
+            "properties": {
+                "finish_reason": {
+                    "type": "string"
+                },
+                "index": {
+                    "type": "integer"
+                },
+                "message": {
+                    "$ref": "#/definitions/models.OllamaChatCompletionMessage"
+                }
+            }
+        },
+        "models.OllamaChatCompletionMessage": {
+            "type": "object",
+            "properties": {
+                "content": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.OllamaChatCompletionResponse": {
+            "type": "object",
+            "properties": {
+                "choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/models.OllamaChatCompletionChoice"
+                    }
+                },
+                "created": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "object": {
+                    "description": "e.g., \"chat.completion\"",
+                    "type": "string"
+                }
+            }
+        },
+        "models.OllamaGenerateResponse": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "description": "Timestamp string",
+                    "type": "string"
+                },
+                "done": {
+                    "type": "boolean"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "response": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ShowModelDetail": {
+            "type": "object",
+            "properties": {
+                "families": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "family": {
+                    "type": "string"
+                },
+                "format": {
+                    "type": "string"
+                },
+                "parameter_size": {
+                    "type": "string"
+                },
+                "parent_model": {
+                    "type": "string"
+                },
+                "quantization_level": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ShowModelInfo": {
+            "type": "object",
+            "properties": {
+                "general.architecture": {
+                    "type": "string"
+                },
+                "general.file_type": {
+                    "type": "integer"
+                },
+                "general.parameter_count": {
+                    "description": "Using uint64 for large numbers",
+                    "type": "integer"
+                },
+                "llama.attention.head_count": {
+                    "type": "integer"
+                },
+                "llama.block_count": {
+                    "type": "integer"
+                },
+                "llama.context_length": {
+                    "type": "integer"
+                },
+                "llama.embedding_length": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.ShowModelRequest": {
+            "type": "object",
+            "properties": {
+                "model": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.ShowModelResponse": {
+            "type": "object",
+            "properties": {
+                "capabilities": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "details": {
+                    "$ref": "#/definitions/models.ShowModelDetail"
+                },
+                "license": {
+                    "type": "string"
+                },
+                "model_info": {
+                    "$ref": "#/definitions/models.ShowModelInfo"
+                },
+                "modelfile": {
+                    "type": "string"
+                },
+                "parameters": {
+                    "type": "string"
+                },
+                "template": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.TagEntry": {
+            "type": "object",
+            "properties": {
+                "digest": {
+                    "type": "string"
+                },
+                "modified_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
+        "models.VersionResponse": {
+            "type": "object",
+            "properties": {
+                "version": {
+                    "type": "string"
+                }
+            }
+        }
+    }
+}

@@ -11,8 +11,21 @@ import (
 	"github.com/offbeat-studio/allama/internal/provider"
 	"github.com/offbeat-studio/allama/internal/router"
 	"github.com/offbeat-studio/allama/internal/storage"
+
+	_ "myproject/docs" // Import the generated docs
 )
 
+// @title Allama API
+// @version 1.0
+// @description This is the Allama API server.
+// @termsOfService http://yourapi.com/terms
+// @contact.name API Support
+// @contact.url http://yourapi.com/support
+// @contact.email support@yourapi.com
+// @license.name Apache 2.0
+// @license.url http://www.apache.org/licenses/LICENSE-2.0.html
+// @host localhost:8080
+// @BasePath /api/v1
 func main() {
 	// Load environment variables from .env file
 	err := godotenv.Overload()
