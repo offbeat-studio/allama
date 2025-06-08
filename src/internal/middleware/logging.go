@@ -47,16 +47,18 @@ func LoggingMiddleware(logDir string) gin.HandlerFunc {
 		// Process request
 		c.Next()
 
-		// Log response
+		// Log response only if status code is not 200
 		statusCode := c.Writer.Status()
-		responseBody := w.body.String()
-		var respBody interface{}
-		if len(responseBody) > 0 {
-			if err := json.Unmarshal([]byte(responseBody), &respBody); err != nil {
-				respBody = responseBody
+		if statusCode != 200 {
+			responseBody := w.body.String()
+			var respBody interface{}
+			if len(responseBody) > 0 {
+				if err := json.Unmarshal([]byte(responseBody), &respBody); err != nil {
+					respBody = responseBody
+				}
 			}
+			logger.LogResponse(statusCode, respBody)
 		}
-		logger.LogResponse(statusCode, respBody)
 	}
 }
 

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/offbeat-studio/allama/internal/config"
@@ -322,13 +321,6 @@ func (r *Router) forwardOllamaRequest(c *gin.Context, prov *models.Provider, pat
 
 // forwardOllamaRequestWithBody forwards a request with a specific body to Ollama
 func (r *Router) forwardOllamaRequestWithBody(c *gin.Context, prov *models.Provider, path string, body []byte) {
-	// Log the request body for debugging
-	fmt.Printf("forwardOllamaRequestWithBody: forwarding body: %s\n", string(body))
-	// Log headers for debugging
-	for key, values := range c.Request.Header {
-		fmt.Printf("forwardOllamaRequestWithBody: header %s: %v\n", key, values)
-	}
-
 	ollamaProvider := provider.NewOllamaProvider(prov.Host)
 
 	headers := make(map[string]string)
@@ -372,11 +364,6 @@ func (r *Router) determineProviderFromModel(modelID string) string {
 	}
 
 	return ""
-}
-
-// generateID creates a simple unique ID for responses
-func generateID() string {
-	return fmt.Sprintf("%d", time.Now().Nanosecond())
 }
 
 // listTags retrieves and aggregates model tags from all active providers, presenting them as Ollama models
@@ -489,12 +476,12 @@ func (r *Router) showModelWithRawBody(c *gin.Context) {
 			"general.architecture":       "llama",
 			"general.file_type":          2,
 			"general.parameter_count":    7000000000,
-			"llama.context_length":       4096,
-			"llama.embedding_length":     4096,
+			"llama.context_length":       128000,
+			"llama.embedding_length":     128000,
 			"llama.block_count":          32,
 			"llama.attention.head_count": 32,
 		},
-		"capabilities": []string{"completion"},
+		"capabilities": []string{"completion", "tools"},
 	})
 }
 
