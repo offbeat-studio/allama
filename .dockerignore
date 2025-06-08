@@ -1,0 +1,30 @@
+# Git / version control
+.git
+.gitignore
+
+# IDE / editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Local development files
+*.local
+*.log
+logs/
+tmp/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Task-specific files (assuming these are not needed in the image)
+tasks/
+
+# Readme and other markdown files (if not needed in the image)
+*.md
+logo.png
+
+# Go build cache (if `go build` is run locally before `docker build`)
+*.o
+*.a

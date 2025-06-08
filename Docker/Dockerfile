@@ -1,5 +1,5 @@
-# Use the official Golang image as the base image
-FROM golang:1.24-alpine
+# Builder stage
+FROM golang:1.24-alpine AS builder
 
 # Set the working directory inside the container
 WORKDIR /app
@@ -18,7 +18,19 @@ COPY src/ ./
 
 # Build the application with CGO enabled
 ENV CGO_ENABLED=1
-RUN go build -o allama ./main.go
+RUN go build -o allama -ldflags="-s -w" ./main.go
+
+# Final stage
+FROM alpine:latest
+
+# Install CA certificates
+RUN apk add --no-cache ca-certificates
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy the compiled binary from the builder stage
+COPY --from=builder /app/allama .
 
 # Expose the port the app runs on
 EXPOSE 8080
