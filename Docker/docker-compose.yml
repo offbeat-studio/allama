@@ -7,11 +7,11 @@ services:
       context: ..
       dockerfile: Docker/Dockerfile
     ports:
-      - "8080:8080"
+      - "11435:11435"
     volumes:
       - ./data:/app/data
     environment:
-      - PORT=8080
+      - PORT=11435
       - DATABASE_PATH=/app/data/allama.db
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}

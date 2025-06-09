@@ -41,7 +41,7 @@ The easiest way to run Allama is using Docker Compose, which sets up the applica
    ```bash
    docker-compose -f Docker/docker-compose.yml up --build
    ```
-4. Allama will be accessible at `http://localhost:8080`.
+4. Allama will be accessible at `http://localhost:11435`.
 
 ### Building and Running Locally
 

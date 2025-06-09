@@ -33,7 +33,7 @@ WORKDIR /app
 COPY --from=builder /app/allama .
 
 # Expose the port the app runs on
-EXPOSE 8080
+EXPOSE 11435
 
 # Command to run the executable
 CMD ["./allama"]
