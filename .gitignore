@@ -1,2 +1,7 @@
 .env
 allama.db
+
+# Log files
+src/logs/
+Docker/logs/
+*.log
