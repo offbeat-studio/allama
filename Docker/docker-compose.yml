@@ -1,5 +1,3 @@
-version: '3.8'
-
 # This docker-compose file is meant to be run from the Docker/ directory
 services:
   allama:
@@ -10,10 +8,15 @@ services:
       - "11435:11435"
     volumes:
       - ./data:/app/data
+      - ./logs:/app/logs  # Mount logs directory
+    env_file:
+      - .env  # Load environment variables from .env file
     environment:
       - PORT=11435
       - DATABASE_PATH=/app/data/allama.db
-      - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
-      - OLLAMA_HOST=${OLLAMA_Host:-http://localhost:11434}
     restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
