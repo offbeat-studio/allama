@@ -1,0 +1,196 @@
+# Allama - AI Model Router
+
+> Allama is your ultimate gateway to the world of AI, offering a powerful and intuitive API router that seamlessly integrates multiple AI model providers into one unified platform.
+
+## Project Overview
+
+Allama is a Go-based API router that provides a unified interface to multiple AI model providers including OpenAI, Anthropic, and Ollama. It acts as a middleware layer that aggregates different AI services under a single RESTful API, with Ollama-compatible endpoints for easy integration with existing tools.
+
+## Key Features
+
+- **Unified API**: Single endpoint for multiple AI providers (OpenAI, Anthropic, Ollama)
+- **Provider Management**: Dynamic configuration and management of AI service providers
+- **Model Aggregation**: Lists and interacts with models from various providers as if hosted locally
+- **Database Integration**: SQLite-based storage for provider and model information
+- **Ollama Compatibility**: Supports Ollama-specific endpoints for seamless integration
+- **Request Forwarding**: Intelligent routing based on model selection
+- **Response Transformation**: Converts provider responses to unified formats
+
+## Architecture
+
+### Core Components
+
+1. **Router** (`internal/router/router.go`): Main HTTP request handler and routing logic
+2. **Providers** (`internal/provider/`): Individual provider implementations (OpenAI, Anthropic, Ollama)
+3. **Storage** (`internal/storage/`): SQLite database management for providers and models
+4. **Config** (`internal/config/`): Environment-based configuration management
+5. **Models** (`internal/models/`): Data structures for providers and models
+
+### Technology Stack
+
+- **Language**: Go 1.24.3
+- **Web Framework**: Gin (HTTP router)
+- **Database**: SQLite with go-sqlite3 driver
+- **Configuration**: Environment variables with godotenv
+- **Containerization**: Docker with multi-stage builds
+
+## API Endpoints
+
+### OpenAI-Compatible Endpoints
+- `GET /api/v1/models` - List all available models
+- `POST /api/v1/chat/completions` - Chat completions
+
+### Ollama-Compatible Endpoints
+- `GET /api/tags` - List model tags (Ollama format)
+- `POST /api/show` - Show model information
+- `POST /api/generate` - Generate text
+- `POST /api/chat` - Chat interface
+- `GET /api/version` - API version
+
+### Health Check
+- `GET /health` - Service health status
+
+## Configuration
+
+Environment variables (see `src/example.env`):
+
+```env
+# Server Configuration
+PORT=8080
+DATABASE_PATH=./allama.db
+
+# OpenAI Provider
+OPENAI_HOST=https://api.openai.com
+IS_OPENAI_ACTIVE=false
+OPENAI_API_KEY=
+
+# Anthropic Provider
+ANTHROPIC_HOST=https://api.anthropic.com
+IS_ANTHROPIC_ACTIVE=false
+ANTHROPIC_API_KEY=
+
+# Ollama Provider
+OLLAMA_HOST=http://localhost:11434
+IS_OLLAMA_ACTIVE=true
+```
+
+## Development Setup
+
+### Prerequisites
+- Go 1.18+ (for building from source)
+- Docker and Docker Compose (for containerized setup)
+- Git
+
+### Local Development
+```bash
+# Clone repository
+git clone https://github.com/offbeat-studio/allama.git
+cd allama
+
+# Setup environment
+cp src/example.env src/.env
+# Edit src/.env with your API keys
+
+# Run locally
+cd src
+go mod tidy
+go run main.go
+```
+
+### Docker Setup
+```bash
+# Using Docker Compose
+docker-compose -f Docker/docker-compose.yml up --build
+
+# Using Makefile
+make build
+make up
+```
+
+## Database Schema
+
+The application uses SQLite with tables for:
+- **Providers**: Store AI service provider configurations
+- **Models**: Store available models for each provider
+
+Database is automatically initialized on startup with configured providers.
+
+## Request Flow
+
+1. Client sends request to Allama API endpoint
+2. Router determines target provider based on model ID
+3. Request is either:
+   - Forwarded directly to Ollama (if Ollama provider)
+   - Transformed and sent to OpenAI/Anthropic APIs
+4. Response is transformed to match expected format
+5. Unified response returned to client
+
+## Provider Integration
+
+### Adding New Providers
+1. Create provider implementation in `internal/provider/`
+2. Add provider configuration to `GetProviderConfigs()`
+3. Implement required interfaces (GetModels, Chat methods)
+4. Add environment variables for configuration
+
+### Supported Providers
+- **OpenAI**: GPT models via OpenAI API
+- **Anthropic**: Claude models via Anthropic API  
+- **Ollama**: Local models via Ollama server
+
+## Logging and Monitoring
+
+- Request/response logging via custom middleware
+- Logs stored in `src/logs/` directory with daily rotation
+- Health check endpoint for monitoring
+- Panic recovery with error reporting
+
+## Security Considerations
+
+- API keys stored as environment variables
+- No API key validation in current implementation
+- Database reset on each startup (development mode)
+- Request forwarding preserves headers
+
+## Deployment
+
+### Docker Production
+```bash
+# Build optimized image
+docker build -f Docker/Dockerfile -t allama:latest .
+
+# Run with environment file
+docker run -p 8080:8080 --env-file .env allama:latest
+```
+
+### Port Configuration
+- Default: 8080 (configurable via PORT environment variable)
+- Docker: 11435 (mapped in docker-compose.yml)
+
+## Testing
+
+- Unit tests available for transformer functionality
+- Router tests for endpoint validation
+- Manual testing via curl or HTTP clients
+
+## Contributing
+
+1. Fork the repository
+2. Create feature branch
+3. Follow Go best practices and conventions
+4. Add tests for new functionality
+5. Submit pull request with detailed description
+
+## License
+
+MIT License - Open source software for AI integration and routing.
+
+## Contact
+
+- Repository: https://github.com/offbeat-studio/allama
+- Issues: GitHub Issues for bug reports and feature requests
+- Maintainer: Offbeat Studio
+
+---
+
+*This documentation is generated for LLM consumption and provides comprehensive information about the Allama AI router project structure, functionality, and usage.*
